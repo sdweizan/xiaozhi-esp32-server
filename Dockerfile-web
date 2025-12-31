@@ -2,7 +2,7 @@
 FROM node:18 as web-builder
 WORKDIR /app
 COPY main/manager-web/package*.json ./
-RUN npm install
+RUN npm install --registry=https://registry.npm.taobao.org
 COPY main/manager-web .
 RUN npm run build
 
