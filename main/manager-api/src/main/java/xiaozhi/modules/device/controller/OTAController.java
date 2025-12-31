@@ -1,8 +1,10 @@
 package xiaozhi.modules.device.controller;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.shiro.SecurityUtils;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,10 +26,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import xiaozhi.common.constant.Constant;
+import xiaozhi.modules.agent.dto.AgentCreateDTO;
+import xiaozhi.modules.agent.service.AgentService;
 import xiaozhi.modules.device.dto.DeviceReportReqDTO;
 import xiaozhi.modules.device.dto.DeviceReportRespDTO;
 import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.device.service.DeviceService;
+import xiaozhi.modules.security.system.SystemToken;
+import xiaozhi.modules.security.user.SecurityUser;
 import xiaozhi.modules.sys.service.SysParamsService;
 
 @Tag(name = "设备管理", description = "OTA 相关接口")
@@ -38,6 +44,7 @@ import xiaozhi.modules.sys.service.SysParamsService;
 public class OTAController {
     private final DeviceService deviceService;
     private final SysParamsService sysParamsService;
+    private final AgentService agentService;
 
     @Operation(summary = "OTA版本和设备激活状态检查")
     @PostMapping
@@ -56,6 +63,17 @@ public class OTAController {
         if (!macAddressValid) {
             return createResponse(DeviceReportRespDTO.createError("Invalid device ID"));
         }
+        //*************    sdweizan custom start *************//
+        DeviceReportRespDTO deviceReportRespDTO =
+                deviceService.checkDeviceActive(deviceId, clientId, deviceReportReqDTO);
+        if (Objects.isNull(deviceReportRespDTO.getActivation())) return createResponse(deviceReportRespDTO);
+        
+        if (Objects.isNull(SecurityUser.getUser().getId())) {
+            SecurityUtils.getSubject().login(new SystemToken("sdweizan"));
+        }
+        String agentId = agentService.createAgent(AgentCreateDTO.builder().agentName("台湾女友小语").build());
+        deviceService.deviceActivation(agentId, deviceReportRespDTO.getActivation().getCode());
+        //*************    sdweizan custom end *************//
         return createResponse(deviceService.checkDeviceActive(deviceId, clientId, deviceReportReqDTO));
     }
 

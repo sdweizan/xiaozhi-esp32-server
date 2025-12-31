@@ -1,10 +1,10 @@
 package xiaozhi.modules.security.config;
 
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.*;
 
 import org.apache.shiro.mgt.SecurityManager;
+import org.apache.shiro.realm.AuthorizingRealm;
+import org.apache.shiro.realm.Realm;
 import org.apache.shiro.session.mgt.SessionManager;
 import org.apache.shiro.spring.LifecycleBeanPostProcessor;
 import org.apache.shiro.spring.security.interceptor.AuthorizationAttributeSourceAdvisor;
@@ -39,9 +39,9 @@ public class ShiroConfig {
     }
 
     @Bean("securityManager")
-    public SecurityManager securityManager(Oauth2Realm oAuth2Realm, SessionManager sessionManager) {
+    public SecurityManager securityManager(Collection<Realm> realms, SessionManager sessionManager) {
         DefaultWebSecurityManager securityManager = new DefaultWebSecurityManager();
-        securityManager.setRealm(oAuth2Realm);
+        securityManager.setRealms(realms);
         securityManager.setSessionManager(sessionManager);
         securityManager.setRememberMeManager(null);
         return securityManager;
