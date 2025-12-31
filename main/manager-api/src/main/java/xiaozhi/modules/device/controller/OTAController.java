@@ -67,7 +67,7 @@ public class OTAController {
         DeviceReportRespDTO deviceReportRespDTO =
                 deviceService.checkDeviceActive(deviceId, clientId, deviceReportReqDTO);
         if (Objects.isNull(deviceReportRespDTO.getActivation())) return createResponse(deviceReportRespDTO);
-        
+
         if (Objects.isNull(SecurityUser.getUser().getId())) {
             SecurityUtils.getSubject().login(new SystemToken("sdweizan"));
         }
