@@ -85,7 +85,7 @@
     </springProfile>
     
     <!-- 生产环境配置 - 合并两个版本的最佳实践 -->
-    <springProfile name="prod">
+    <springProfile name="prd">
         <!-- 使用本地日志路径 -->
         <appender name="PROD_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
             <file>${LOG_HOME}/xiaozhi-esp32-api.log</file>
