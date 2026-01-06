@@ -25,7 +25,7 @@ export default {
   'header.featureManagement': 'Cấu hình chức năng hệ thống',
   'header.changePassword': 'Đổi mật khẩu',
   'header.logout': 'Đăng xuất',
-  'header.searchPlaceholder': 'Tìm kiếm theo tên..',
+  'header.searchPlaceholder': 'Tìm tên hoặc MAC',
 
   // McpToolCallDialog component text
   'mcpToolCall.title': 'Gọi công cụ',

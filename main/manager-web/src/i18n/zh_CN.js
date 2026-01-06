@@ -25,7 +25,7 @@ export default {
   'header.featureManagement': '系统功能配置',
   'header.changePassword': '修改密码',
   'header.logout': '退出登录',
-  'header.searchPlaceholder': '输入名称搜索..',
+  'header.searchPlaceholder': '输入名称或mac搜索',
 
   // McpToolCallDialog组件文本
   'mcpToolCall.title': '工具调用',
