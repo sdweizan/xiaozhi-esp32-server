@@ -25,7 +25,7 @@ export default {
   'header.featureManagement': 'System Feature Management',
   'header.changePassword': 'Change Password',
   'header.logout': 'Logout',
-  'header.searchPlaceholder': 'Search by name..',
+  'header.searchPlaceholder': 'Search name or mac',
 
   // McpToolCallDialog component text
   'mcpToolCall.title': 'Tool Call',

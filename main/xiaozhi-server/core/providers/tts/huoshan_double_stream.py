@@ -160,11 +160,16 @@ class TTSProvider(TTSProviderBase):
         self.speech_rate = int(speech_rate) if speech_rate else 0
         self.loudness_rate = int(loudness_rate) if loudness_rate else 0
         self.pitch = int(pitch) if pitch else 0
+        # 多情感音色参数
+        self.emotion = config.get("emotion", "neutral")  
+        emotion_scale = config.get("emotion_scale", "4")
+        self.emotion_scale = int(emotion_scale) if emotion_scale else 4
+
         self.ws_url = config.get("ws_url")
         self.authorization = config.get("authorization")
         self.header = {"Authorization": f"{self.authorization}{self.access_token}"}
         enable_ws_reuse_value = config.get("enable_ws_reuse", True)
-        self.enable_ws_reuse = False if str(enable_ws_reuse_value).lower() in ('false', 'False') else True
+        self.enable_ws_reuse = False if str(enable_ws_reuse_value).lower() == 'false' else True
         self.tts_text = ""
         self.opus_encoder = opus_encoder_utils.OpusEncoderUtils(
             sample_rate=16000, channels=1, frame_size_ms=60
@@ -642,6 +647,19 @@ class TTSProvider(TTSProviderBase):
         audio_format="pcm",
         audio_sample_rate=16000,
     ):
+        audio_params = {
+            "format": audio_format,
+            "sample_rate": audio_sample_rate,
+            "speech_rate": self.speech_rate,
+            "loudness_rate": self.loudness_rate
+        }
+
+        # 如果是多情感音色,添加情感参数
+        if '_emo_' in self.voice:
+            if self.emotion:
+                audio_params["emotion"] = self.emotion
+                audio_params["emotion_scale"] = self.emotion_scale
+
         return str.encode(
             json.dumps(
                 {
@@ -651,12 +669,7 @@ class TTSProvider(TTSProviderBase):
                     "req_params": {
                         "text": text,
                         "speaker": speaker,
-                        "audio_params": {
-                            "format": audio_format,
-                            "sample_rate": audio_sample_rate,
-                            "speech_rate": self.speech_rate,
-                            "loudness_rate": self.loudness_rate
-                        },
+                        "audio_params": audio_params,
                         "additions": json.dumps({
                             "post_process": {
                                 "pitch": self.pitch

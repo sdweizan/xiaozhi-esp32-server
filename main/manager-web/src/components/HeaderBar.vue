@@ -408,18 +408,8 @@ export default {
       // 保存搜索历史
       this.saveSearchHistory(searchValue);
 
-      try {
-        // 创建不区分大小写的正则表达式
-        const regex = new RegExp(searchValue, "i");
-        // 触发搜索事件，将正则表达式传递给父组件
-        this.$emit("search", regex);
-      } catch (error) {
-        console.error("正则表达式创建失败:", error);
-        this.$message.error({
-          message: this.$t("message.error"),
-          showClose: true,
-        });
-      }
+      // 触发搜索事件，将搜索关键词传递给父组件
+      this.$emit("search", searchValue);
 
       // 搜索完成后让输入框失去焦点，从而触发blur事件隐藏搜索历史
       if (this.$refs.searchInput) {

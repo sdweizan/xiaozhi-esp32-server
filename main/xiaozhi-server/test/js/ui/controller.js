@@ -1,8 +1,8 @@
 // UI控制模块
 import { loadConfig, saveConfig } from '../config/manager.js';
+import { getAudioPlayer } from '../core/audio/player.js';
 import { getAudioRecorder } from '../core/audio/recorder.js';
 import { getWebSocketHandler } from '../core/network/websocket.js';
-import { getAudioPlayer } from '../core/audio/player.js';
 
 // UI控制器类
 export class UIController {
@@ -266,7 +266,6 @@ export class UIController {
         const deviceMacInput = document.getElementById('deviceMac');
         const deviceNameInput = document.getElementById('deviceName');
         const clientIdInput = document.getElementById('clientId');
-        const tokenInput = document.getElementById('token');
 
         toggleButton.addEventListener('click', () => {
             this.isEditing = !this.isEditing;
@@ -274,7 +273,6 @@ export class UIController {
             deviceMacInput.disabled = !this.isEditing;
             deviceNameInput.disabled = !this.isEditing;
             clientIdInput.disabled = !this.isEditing;
-            tokenInput.disabled = !this.isEditing;
 
             toggleButton.textContent = this.isEditing ? '确定' : '编辑';
 
