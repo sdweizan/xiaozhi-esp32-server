@@ -133,12 +133,27 @@ def _get_or_create_rate_controller(conn, frame_duration, is_single_packet):
     Returns:
         (rate_controller, flow_control)
     """
-    # 判断是否需要重置：单包模式且 sentence_id 变化，或者控制器不存在
-    need_reset = (
-        is_single_packet
-        and getattr(conn, "audio_flow_control", {}).get("sentence_id")
-        != conn.sentence_id
-    ) or not hasattr(conn, "audio_rate_controller")
+    # 检查是否需要重置控制器
+    need_reset = False
+
+    if not hasattr(conn, "audio_rate_controller"):
+        # 控制器不存在，需要创建
+        need_reset = True
+    else:
+        rate_controller = conn.audio_rate_controller
+
+        # 后台发送任务已停止, 则需要重置
+        if (
+            not rate_controller.pending_send_task
+            or rate_controller.pending_send_task.done()
+        ):
+            need_reset = True
+        # 当sentence_id 变化，需要重置
+        elif (
+            getattr(conn, "audio_flow_control", {}).get("sentence_id")
+            != conn.sentence_id
+        ):
+            need_reset = True
 
     if need_reset:
         # 创建或获取 rate_controller

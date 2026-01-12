@@ -130,7 +130,7 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
     @Override
     public List<AgentDTO> getUserAgents(Long userId, String keyword, String searchType) {
         QueryWrapper<AgentEntity> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("user_id", userId);
+        queryWrapper.eq("user_id", userId).orderByDesc("created_at");
 
         // 如果有搜索关键词，根据搜索类型添加相应的查询条件
         if (StringUtils.isNotBlank(keyword)) {

@@ -1,5 +1,6 @@
 import time
 import json
+import uuid
 import random
 import asyncio
 from core.utils.dialogue import Message
@@ -104,6 +105,9 @@ async def checkWakeupWords(conn, text):
     opus_packets = await audio_to_data(response.get("file_path"), use_cache=False)
     # 播放唤醒词回复
     conn.client_abort = False
+
+    # 将唤醒词回复视为新会话，生成新的 sentence_id，确保流控器重置
+    conn.sentence_id = str(uuid.uuid4().hex)
 
     conn.logger.bind(tag=TAG).info(f"播放唤醒词回复: {response.get('text')}")
     await sendAudioMessage(conn, SentenceType.FIRST, opus_packets, response.get("text"))

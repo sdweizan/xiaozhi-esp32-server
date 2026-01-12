@@ -4,15 +4,15 @@ import json
 import queue
 import asyncio
 import traceback
-from typing import Callable, Any
 import websockets
+
+from typing import Callable, Any
 from core.utils.tts import MarkdownCleaner
 from config.logger import setup_logging
 from core.utils import opus_encoder_utils
 from core.utils.util import check_model_key
 from core.providers.tts.base import TTSProviderBase
 from core.providers.tts.dto.dto import SentenceType, ContentType, InterfaceType
-from asyncio import Task
 
 
 TAG = __name__
@@ -340,8 +340,9 @@ class TTSProvider(TTSProviderBase):
             #  过滤Markdown
             filtered_text = MarkdownCleaner.clean_markdown(text)
 
-            # 发送文本
-            await self.send_text(self.voice, filtered_text, self.conn.sentence_id)
+            if filtered_text:
+                # 发送文本
+                await self.send_text(self.voice, filtered_text, self.conn.sentence_id)
             return
         except Exception as e:
             logger.bind(tag=TAG).error(f"发送TTS文本失败: {str(e)}")

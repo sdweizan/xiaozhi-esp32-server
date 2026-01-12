@@ -136,6 +136,7 @@ public class TimbreServiceImpl extends BaseServiceImpl<TimbreDao, TimbreEntity> 
                 .map(entity -> {
                     VoiceDTO dto = new VoiceDTO(entity.getId(), entity.getName());
                     dto.setVoiceDemo(entity.getVoiceDemo());
+                    dto.setIsClone(false); // 设置为普通音色
                     return dto;
                 })
                 .collect(Collectors.toList());
@@ -152,6 +153,7 @@ public class TimbreServiceImpl extends BaseServiceImpl<TimbreDao, TimbreEntity> 
                 voiceDTO.setName(MessageUtils.getMessage(ErrorCode.VOICE_CLONE_PREFIX) + entity.getName());
                 // 保留从数据库查询到的voiceDemo字段
                 voiceDTO.setVoiceDemo(entity.getVoiceDemo());
+                voiceDTO.setIsClone(true); // 设置为克隆音色
                 redisUtils.set(RedisKeys.getTimbreNameById(voiceDTO.getId()), voiceDTO.getName(),
                         RedisUtils.NOT_EXPIRE);
                 voiceDTOs.add(0, voiceDTO);
@@ -214,6 +216,7 @@ public class TimbreServiceImpl extends BaseServiceImpl<TimbreDao, TimbreEntity> 
         TimbreEntity entity = list.get(0);
         VoiceDTO dto = new VoiceDTO(entity.getId(), entity.getName());
         dto.setVoiceDemo(entity.getVoiceDemo());
+        dto.setIsClone(false); // 设置为普通音色
         return dto;
     }
 }
