@@ -86,9 +86,12 @@ def get_ip_info(ip_addr, logger):
         # 缓存未命中，调用API
         if is_private_ip(ip_addr):
             ip_addr = ""
-        url = f"https://whois.pconline.com.cn/ipJson.jsp?json=true&ip={ip_addr}"
-        resp = requests.get(url).json()
-        ip_info = {"city": resp.get("city")}
+        if "." in ip_addr:
+            url = f"https://ipquery.market.alicloudapi.com/query?ip={ip_addr}"
+        else:
+            url = f"https://sdipv6c.market.alicloudapi.com/ipv6/query?ip={ip_addr}"
+        resp = requests.get(url, headers={'Authorization': 'APPCODE ee8fae9a0c01412688092c0c60d4bc2a'}).json()
+        ip_info = {"city": resp.get("data").get("city")}
 
         # 存入缓存
         cache_manager.set(CacheType.IP_INFO, ip_addr, ip_info)
