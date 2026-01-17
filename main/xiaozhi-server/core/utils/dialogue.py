@@ -2,7 +2,10 @@ import uuid
 import re
 from typing import List, Dict
 from datetime import datetime
+from config.logger import setup_logging
 
+TAG = __name__
+logger = setup_logging()
 
 class Message:
     def __init__(
@@ -108,7 +111,7 @@ class Dialogue:
                     enhanced_system_prompt,
                     flags=re.DOTALL,
                 )
-            print(f"系统提示词: \n{dialogue}")
+                logger.bind(tag=TAG).info(f"系统提示词: \n{enhanced_system_prompt}")
             dialogue.append({"role": "system", "content": enhanced_system_prompt})
 
         # 添加用户和助手的对话
