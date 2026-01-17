@@ -269,9 +269,6 @@ class PromptManager:
             self.logger.bind(tag=TAG).info(
                 f"构建增强提示词成功，长度: {len(enhanced_prompt)}"
             )
-            self.logger.bind(tag=TAG).debug(
-                f"构建增强提示词内容: {enhanced_prompt}"
-            )
             return enhanced_prompt
 
         except Exception as e:

@@ -93,9 +93,9 @@ class ToolManager:
 
             # 执行工具
             self.logger.info(f"执行工具: {tool_name}，参数: {arguments}")
-            result = await executor.execute(self.conn, tool_name, arguments)
-            self.logger.debug(f"工具执行结果: {result}")
-            return result
+            response = await executor.execute(self.conn, tool_name, arguments)
+            self.logger.debug(f"工具执行结果: {response.result}")
+            return response
 
         except Exception as e:
             self.logger.error(f"执行工具 {tool_name} 时出错: {e}")

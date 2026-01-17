@@ -954,7 +954,7 @@ class ConnectionHandler:
                 # 收集所有工具调用的 Future
                 futures_with_data = []
                 for tool_call_data in tool_calls_list:
-                    self.logger.bind(tag=TAG).debug(
+                    self.logger.bind(tag=TAG).info(
                         f"function_name={tool_call_data['name']}, function_id={tool_call_data['id']}, function_arguments={tool_call_data['arguments']}"
                     )
 

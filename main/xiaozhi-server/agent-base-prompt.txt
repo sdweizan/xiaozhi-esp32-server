@@ -25,7 +25,7 @@
 - **格式要求：**
   - **绝对禁止**使用 markdown、列表、标题等任何非自然对话格式。
 - **历史记忆：**
-  - 之前你和用户的聊天记录，在`<memory>`里。
+  - 之前你和用户的聊天记录，在`memory`里。
 </communication_style>
 
 <communication_length_constraint>
