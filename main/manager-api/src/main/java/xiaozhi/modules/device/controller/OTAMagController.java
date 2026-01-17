@@ -7,7 +7,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
@@ -145,15 +147,11 @@ public class OTAMagController {
 
         // 检查下载次数
         String downloadCountKey = RedisKeys.getOtaDownloadCountKey(uuid);
-        Integer downloadCount = (Integer) redisUtils.get(downloadCountKey);
-        if (downloadCount == null) {
-            downloadCount = 0;
-        }
+        Integer downloadCount = (Integer) Optional.ofNullable(redisUtils.get(downloadCountKey)).orElse(0);
 
         // 如果下载次数超过3次，返回404
         if (downloadCount >= 3) {
-            redisUtils.delete(downloadCountKey);
-            redisUtils.delete(RedisKeys.getOtaIdKey(uuid));
+            redisUtils.delete(List.of(downloadCountKey, RedisKeys.getOtaIdKey(uuid)));
             logger.warn("Download limit exceeded for UUID: {}", uuid);
             return ResponseEntity.notFound().build();
         }

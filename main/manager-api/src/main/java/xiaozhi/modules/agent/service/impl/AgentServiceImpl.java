@@ -1,11 +1,6 @@
 package xiaozhi.modules.agent.service.impl;
 
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -28,6 +23,7 @@ import xiaozhi.common.service.impl.BaseServiceImpl;
 import xiaozhi.common.user.UserDetail;
 import xiaozhi.common.utils.ConvertUtils;
 import xiaozhi.common.utils.JsonUtils;
+import xiaozhi.common.utils.ToolUtil;
 import xiaozhi.modules.agent.dao.AgentDao;
 import xiaozhi.modules.agent.dto.AgentCreateDTO;
 import xiaozhi.modules.agent.dto.AgentDTO;
@@ -136,20 +132,14 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         if (StringUtils.isNotBlank(keyword)) {
             if ("mac".equals(searchType)) {
                 // 按MAC地址搜索：先搜索设备，再获取对应的智能体
-                List<DeviceEntity> devices = deviceService.searchDevicesByMacAddress(keyword, userId);
-
-                if (!devices.isEmpty()) {
-                    // 获取设备对应的智能体ID列表
-                    List<String> agentIds = devices.stream()
-                            .map(DeviceEntity::getAgentId)
-                            .distinct()
-                            .collect(Collectors.toList());
-
-                    if (!agentIds.isEmpty()) {
-                        queryWrapper.in("id", agentIds);
-                    } else {
-                        return new ArrayList<>();
-                    }
+                List<DeviceEntity> devices = Optional.ofNullable(deviceService.searchDevicesByMacAddress(keyword, userId)).orElseGet(ArrayList::new);
+                // 获取设备对应的智能体ID列表
+                List<String> agentIds = devices.stream()
+                        .map(DeviceEntity::getAgentId)
+                        .distinct()
+                        .collect(Collectors.toList());
+                if (ToolUtil.isNotEmpty(agentIds)) {
+                    queryWrapper.in("id", agentIds);
                 } else {
                     return new ArrayList<>();
                 }

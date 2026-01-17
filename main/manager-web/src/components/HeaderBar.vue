@@ -795,11 +795,15 @@ export default {
   color: #909399;
   visibility: hidden;
 }
-
+.more-dropdown {
+  padding: 0;
+}
 .more-dropdown .el-dropdown-link {
   display: flex;
   align-items: center;
   gap: 7px;
+  height: 100%;
+  padding: 0 15px;
 }
 
 .search-history-item:hover .clear-item-icon {

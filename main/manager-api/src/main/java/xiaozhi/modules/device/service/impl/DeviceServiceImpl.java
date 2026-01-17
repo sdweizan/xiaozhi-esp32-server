@@ -4,17 +4,21 @@ import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.util.Base64;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.TimeZone;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
+import cn.hutool.core.date.DatePattern;
+import cn.hutool.core.date.DateUtil;
+import cn.hutool.core.map.MapUtil;
+import cn.hutool.core.util.StrUtil;
+import cn.hutool.crypto.digest.DigestUtil;
+import cn.hutool.http.ContentType;
+import cn.hutool.http.Header;
+import cn.hutool.http.HttpRequest;
+import cn.hutool.json.JSONUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.scheduling.annotation.Async;
@@ -40,6 +44,8 @@ import xiaozhi.common.service.impl.BaseServiceImpl;
 import xiaozhi.common.user.UserDetail;
 import xiaozhi.common.utils.ConvertUtils;
 import xiaozhi.common.utils.DateUtils;
+import xiaozhi.common.utils.Result;
+import xiaozhi.common.utils.ToolUtil;
 import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.dto.DeviceManualAddDTO;
 import xiaozhi.modules.device.dto.DevicePageUserDTO;
@@ -88,16 +94,16 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         if (StringUtils.isBlank(activationCode)) {
             throw new RenException(ErrorCode.ACTIVATION_CODE_EMPTY);
         }
-        String deviceKey = "ota:activation:code:" + activationCode;
+        String deviceKey = RedisKeys.getOtaActivationCode(activationCode);
         Object cacheDeviceId = redisUtils.get(deviceKey);
-        if (cacheDeviceId == null) {
+        if (ToolUtil.isEmpty(cacheDeviceId)) {
             throw new RenException(ErrorCode.ACTIVATION_CODE_ERROR);
         }
         String deviceId = (String) cacheDeviceId;
         String safeDeviceId = deviceId.replace(":", "_").toLowerCase();
-        String cacheDeviceKey = String.format("ota:activation:data:%s", safeDeviceId);
+        String cacheDeviceKey = RedisKeys.getOtaDeviceActivationInfo(safeDeviceId);
         Map<String, Object> cacheMap = (Map<String, Object>) redisUtils.get(cacheDeviceKey);
-        if (cacheMap == null) {
+        if (ToolUtil.isEmpty(cacheMap)) {
             throw new RenException(ErrorCode.ACTIVATION_CODE_ERROR);
         }
         String cachedCode = (String) cacheMap.get("activation_code");
@@ -133,19 +139,56 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         deviceEntity.setLastConnectedAt(currentTime);
         deviceDao.insert(deviceEntity);
 
-        // 清理redis缓存
-        redisUtils.delete(cacheDeviceKey);
-        redisUtils.delete(deviceKey);
-
-        // 添加：清除智能体设备数量缓存
-        redisUtils.delete(RedisKeys.getAgentDeviceCountById(agentId));
-
+        // 清理redis缓存、清除智能体设备数量缓存
+        redisUtils.delete(List.of(cacheDeviceKey, deviceKey, RedisKeys.getAgentDeviceCountById(agentId)));
         return true;
     }
 
+    /**
+     * 获取设备在线数据
+     */
     @Override
-    public DeviceReportRespDTO checkDeviceActive(String macAddress, String clientId,
-            DeviceReportReqDTO deviceReport) {
+    public String getDeviceOnlineData(String agentId) {
+        // 从系统参数中获取MQTT网关地址
+        String mqttGatewayUrl = sysParamsService.getValue("server.mqtt_manager_api", true);
+        if (StringUtils.isBlank(mqttGatewayUrl) || "null".equals(mqttGatewayUrl)) {
+            return "";
+        }
+        // 构建完整的URL
+        String url = StrUtil.format("http://{}/api/devices/status", mqttGatewayUrl);
+
+        // 获取当前用户的设备列表
+        UserDetail user = SecurityUser.getUser();
+        List<DeviceEntity> devices = getUserDevices(user.getId(), agentId);
+
+        // 构建deviceIds数组
+        Set<String> deviceIds = devices.stream().map(o -> {
+            String macAddress = Optional.ofNullable(o.getMacAddress()).orElse("unknown").replace(":", "_");
+            String groupId = Optional.ofNullable(o.getBoard()).orElse("GID_default").replace(":", "_");
+            return StrUtil.format("{}@@@{}@@@{}", groupId, macAddress, macAddress);
+        }).collect(Collectors.toSet());
+
+        // 构建请求入参
+        Map<String, Set<String>> params = MapUtil
+                .builder(new HashMap<String, Set<String>>())
+                .put("clientIds", deviceIds).build();
+
+        if (ToolUtil.isNotEmpty(deviceIds)) {
+            // 发送请求
+            String resultMessage = HttpRequest.post(url)
+                    .header(Header.CONTENT_TYPE, ContentType.JSON.getValue())
+                    .header(Header.AUTHORIZATION, "Bearer " + generateBearerToken())
+                    .body(JSONUtil.toJsonStr(params))
+                    .timeout(10000) //超时，毫秒
+                    .execute().body();
+            return resultMessage;
+        }
+        // 返回响应
+        return "";
+    }
+
+    @Override
+    public DeviceReportRespDTO checkDeviceActive(String macAddress, String clientId, DeviceReportReqDTO deviceReport) {
         DeviceReportRespDTO response = new DeviceReportRespDTO();
         response.setServer_time(buildServerTime());
 
@@ -356,8 +399,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
 
     private String getDeviceCacheKey(String deviceId) {
         String safeDeviceId = deviceId.replace(":", "_").toLowerCase();
-        String dataKey = String.format("ota:activation:data:%s", safeDeviceId);
-        return dataKey;
+        return RedisKeys.getOtaDeviceActivationInfo(safeDeviceId);
     }
 
     public DeviceReportRespDTO.Activation buildActivation(String deviceId, DeviceReportReqDTO deviceReport) {
@@ -396,7 +438,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             redisUtils.set(dataKey, dataMap);
 
             // 写入反查激活码 key
-            String codeKey = "ota:activation:code:" + newCode;
+            String codeKey = RedisKeys.getOtaActivationCode(newCode);
             redisUtils.set(codeKey, deviceId);
         }
         return code;
@@ -605,5 +647,22 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         mqtt.setSubscribe_topic("devices/p2p/" + deviceIdSafeStr);
 
         return mqtt;
+    }
+
+
+    /**
+     * 生成BearerToken
+     */
+    private String generateBearerToken() {
+        try {
+            String dateStr = DateUtil.format(new Date(), DatePattern.NORM_DATE_PATTERN);
+            String signatureKey = sysParamsService.getValue(Constant.SERVER_MQTT_SECRET,false);
+            if (ToolUtil.isEmpty(signatureKey)) {
+                return null;
+            }
+            return DigestUtil.sha256Hex(dateStr + signatureKey);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

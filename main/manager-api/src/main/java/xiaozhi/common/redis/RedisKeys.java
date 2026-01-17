@@ -166,4 +166,14 @@ public class RedisKeys {
     public static String getTmpRegisterMacKey(String deviceId) {
         return "tmp_register_mac:" + deviceId;
     }
+
+    /**
+     * OTA绑定设备
+     */
+    public static String getOtaActivationCode(String activationCode) {return "ota:activation:code:" + activationCode;}
+
+    /**
+     * OTA获取设备mac相关信息
+     */
+    public static String getOtaDeviceActivationInfo(String deviceId) {return "ota:activation:data:" + deviceId;}
 }

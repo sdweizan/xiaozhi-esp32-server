@@ -13,6 +13,10 @@ import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.device.vo.UserShowDeviceListVO;
 
 public interface DeviceService extends BaseService<DeviceEntity> {
+    /**
+     * 获取设备在线数据
+     */
+    String getDeviceOnlineData(String agentId);
 
     /**
      * 检查设备是否激活
