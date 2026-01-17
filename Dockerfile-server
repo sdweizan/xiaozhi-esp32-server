@@ -21,7 +21,8 @@ RUN pip config set global.index-url http://mirrors.cloud.aliyuncs.com/pypi/simpl
 ENV LANG=zh_CN.UTF-8 \
     LC_ALL=zh_CN.UTF-8 \
     LANGUAGE=zh_CN:zh \
-    PYTHONIOENCODING=utf-8
+    PYTHONIOENCODING=utf-8 \
+    TZ=Asia/Shanghai
 
 WORKDIR /opt/xiaozhi-esp32-server
 
