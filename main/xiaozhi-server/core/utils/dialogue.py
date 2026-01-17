@@ -108,6 +108,7 @@ class Dialogue:
                     enhanced_system_prompt,
                     flags=re.DOTALL,
                 )
+            print(f"系统提示词: \n{dialogue}")
             dialogue.append({"role": "system", "content": enhanced_system_prompt})
 
         # 添加用户和助手的对话

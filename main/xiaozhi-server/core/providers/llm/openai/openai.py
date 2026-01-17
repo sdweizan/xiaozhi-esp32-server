@@ -102,7 +102,7 @@ class LLMProvider(LLMProviderBase):
     def response_with_functions(self, session_id, dialogue, functions=None, **kwargs):
         try:
             dialogue = self.normalize_dialogue(dialogue)
-            logger.bind(tag=TAG).debug(f"构建增强提示词内容: \n{dialogue}")
+            # logger.bind(tag=TAG).debug(f"构建增强提示词内容: \n{dialogue}")
 
             request_params = {
                 "model": self.model_name,
