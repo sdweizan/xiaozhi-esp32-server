@@ -1125,7 +1125,7 @@ export default {
   'voiceClone.training': 'Training',
   'voiceClone.trainSuccess': 'Training successful',
   'voiceClone.trainFailed': 'Training failed',
-  'voiceClone.itemsPerPage': '{items} items per page',
+  'voiceClone.itemsPerPage': '{items} items/page',
   'voiceClone.firstPage': 'First Page',
   'voiceClone.prevPage': 'Previous Page',
   'voiceClone.nextPage': 'Next Page',

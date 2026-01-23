@@ -1,10 +1,6 @@
 package xiaozhi.modules.timbre.service.impl;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
@@ -128,10 +124,7 @@ public class TimbreServiceImpl extends BaseServiceImpl<TimbreDao, TimbreEntity> 
         if (StringUtils.isNotBlank(voiceName)) {
             queryWrapper.like("name", voiceName);
         }
-        List<TimbreEntity> timbreEntities = timbreDao.selectList(queryWrapper);
-        if (timbreEntities == null) {
-            timbreEntities = new ArrayList<>();
-        }
+        List<TimbreEntity> timbreEntities = Optional.ofNullable(timbreDao.selectList(queryWrapper)).orElseGet(ArrayList::new);
         List<VoiceDTO> voiceDTOs = timbreEntities.stream()
                 .map(entity -> {
                     VoiceDTO dto = new VoiceDTO(entity.getId(), entity.getName());

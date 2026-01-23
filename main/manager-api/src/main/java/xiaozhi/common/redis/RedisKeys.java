@@ -170,10 +170,21 @@ public class RedisKeys {
     /**
      * OTA绑定设备
      */
-    public static String getOtaActivationCode(String activationCode) {return "ota:activation:code:" + activationCode;}
+    public static String getOtaActivationCode(String activationCode) {
+        return "ota:activation:code:" + activationCode;
+    }
 
     /**
      * OTA获取设备mac相关信息
      */
-    public static String getOtaDeviceActivationInfo(String deviceId) {return "ota:activation:data:" + deviceId;}
+    public static String getOtaDeviceActivationInfo(String deviceId) {
+        return "ota:activation:data:" + deviceId;
+    }
+
+    /**
+     * OTA上传次数
+     */
+    public static String getOtaUploadCountKey(Long username) {
+        return "ota:upload:count:" + username;
+    }
 }

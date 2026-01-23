@@ -4,21 +4,20 @@ import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.util.*;
+import java.util.Base64;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.TimeZone;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
-import cn.hutool.core.date.DatePattern;
-import cn.hutool.core.date.DateUtil;
-import cn.hutool.core.map.MapUtil;
-import cn.hutool.core.util.StrUtil;
-import cn.hutool.crypto.digest.DigestUtil;
-import cn.hutool.http.ContentType;
-import cn.hutool.http.Header;
-import cn.hutool.http.HttpRequest;
-import cn.hutool.json.JSONUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.scheduling.annotation.Async;
@@ -30,7 +29,16 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 
+import cn.hutool.core.date.DatePattern;
+import cn.hutool.core.date.DateUtil;
+import cn.hutool.core.map.MapUtil;
 import cn.hutool.core.util.RandomUtil;
+import cn.hutool.core.util.StrUtil;
+import cn.hutool.crypto.digest.DigestUtil;
+import cn.hutool.http.ContentType;
+import cn.hutool.http.Header;
+import cn.hutool.http.HttpRequest;
+import cn.hutool.json.JSONUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,7 +52,6 @@ import xiaozhi.common.service.impl.BaseServiceImpl;
 import xiaozhi.common.user.UserDetail;
 import xiaozhi.common.utils.ConvertUtils;
 import xiaozhi.common.utils.DateUtils;
-import xiaozhi.common.utils.Result;
 import xiaozhi.common.utils.ToolUtil;
 import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.dto.DeviceManualAddDTO;
@@ -179,7 +186,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
                     .header(Header.CONTENT_TYPE, ContentType.JSON.getValue())
                     .header(Header.AUTHORIZATION, "Bearer " + generateBearerToken())
                     .body(JSONUtil.toJsonStr(params))
-                    .timeout(10000) //超时，毫秒
+                    .timeout(10000) // 超时，毫秒
                     .execute().body();
             return resultMessage;
         }
@@ -649,14 +656,13 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         return mqtt;
     }
 
-
     /**
      * 生成BearerToken
      */
     private String generateBearerToken() {
         try {
             String dateStr = DateUtil.format(new Date(), DatePattern.NORM_DATE_PATTERN);
-            String signatureKey = sysParamsService.getValue(Constant.SERVER_MQTT_SECRET,false);
+            String signatureKey = sysParamsService.getValue(Constant.SERVER_MQTT_SECRET, false);
             if (ToolUtil.isEmpty(signatureKey)) {
                 return null;
             }
@@ -664,5 +670,161 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         } catch (Exception e) {
             return null;
         }
+    }
+
+    @Override
+    public Object getDeviceTools(String deviceId) {
+        // 从系统参数中获取MQTT网关地址
+        String mqttGatewayUrl = sysParamsService.getValue("server.mqtt_manager_api", true);
+        if (StringUtils.isBlank(mqttGatewayUrl) || "null".equals(mqttGatewayUrl)) {
+            return null;
+        }
+
+        // 获取设备信息
+        DeviceEntity device = baseDao.selectById(deviceId);
+        if (device == null) {
+            return null;
+        }
+
+        // 检查设备是否属于当前用户
+        UserDetail user = SecurityUser.getUser();
+        if (!device.getUserId().equals(user.getId())) {
+            return null;
+        }
+
+        // 构建clientId
+        String macAddress = Optional.ofNullable(device.getMacAddress()).orElse("unknown").replace(":", "_");
+        String groupId = Optional.ofNullable(device.getBoard()).orElse("GID_default").replace(":", "_");
+        String clientId = StrUtil.format("{}@@@{}@@@{}", groupId, macAddress, macAddress);
+
+        // 构建完整的URL
+        String url = StrUtil.format("http://{}/api/commands/{}", mqttGatewayUrl, clientId);
+
+        // 构建请求体
+        Map<String, Object> payload = MapUtil
+                .builder(new HashMap<String, Object>())
+                .put("jsonrpc", "2.0")
+                .put("id", 2)
+                .put("method", "tools/list")
+                .put("params", MapUtil.builder(new HashMap<String, Object>())
+                        .put("withUserTools", true)
+                        .build())
+                .build();
+
+        Map<String, Object> requestBody = MapUtil
+                .builder(new HashMap<String, Object>())
+                .put("type", "mcp")
+                .put("payload", payload)
+                .build();
+
+        // 发送请求
+        String resultMessage = HttpRequest.post(url)
+                .header(Header.CONTENT_TYPE, ContentType.JSON.getValue())
+                .header(Header.AUTHORIZATION, "Bearer " + generateBearerToken())
+                .body(JSONUtil.toJsonStr(requestBody))
+                .timeout(10000) // 超时，毫秒
+                .execute().body();
+
+        // 解析响应
+        if (StringUtils.isNotBlank(resultMessage)) {
+            cn.hutool.json.JSONObject jsonObject = JSONUtil.parseObj(resultMessage);
+            if (jsonObject.getBool("success", false)) {
+                return jsonObject.get("data");
+            }
+        }
+
+        return null;
+    }
+
+    @Override
+    public Object callDeviceTool(String deviceId, String toolName, Map<String, Object> arguments) {
+        // 从系统参数中获取MQTT网关地址
+        String mqttGatewayUrl = sysParamsService.getValue("server.mqtt_manager_api", true);
+        if (StringUtils.isBlank(mqttGatewayUrl) || "null".equals(mqttGatewayUrl)) {
+            return null;
+        }
+
+        // 获取设备信息
+        DeviceEntity device = baseDao.selectById(deviceId);
+        if (device == null) {
+            return null;
+        }
+
+        // 检查设备是否属于当前用户
+        UserDetail user = SecurityUser.getUser();
+        if (!device.getUserId().equals(user.getId())) {
+            return null;
+        }
+
+        // 构建clientId
+        String macAddress = Optional.ofNullable(device.getMacAddress()).orElse("unknown").replace(":", "_");
+        String groupId = Optional.ofNullable(device.getBoard()).orElse("GID_default").replace(":", "_");
+        String clientId = StrUtil.format("{}@@@{}@@@{}", groupId, macAddress, macAddress);
+
+        // 构建完整的URL
+        String url = StrUtil.format("http://{}/api/commands/{}", mqttGatewayUrl, clientId);
+
+        // 构建请求体
+        Map<String, Object> params = MapUtil
+                .builder(new HashMap<String, Object>())
+                .put("name", toolName)
+                .put("arguments", arguments)
+                .build();
+
+        Map<String, Object> payload = MapUtil
+                .builder(new HashMap<String, Object>())
+                .put("jsonrpc", "2.0")
+                .put("id", 2)
+                .put("method", "tools/call")
+                .put("params", params)
+                .build();
+
+        Map<String, Object> requestBody = MapUtil
+                .builder(new HashMap<String, Object>())
+                .put("type", "mcp")
+                .put("payload", payload)
+                .build();
+
+        // 发送请求
+        String resultMessage = HttpRequest.post(url)
+                .header(Header.CONTENT_TYPE, ContentType.JSON.getValue())
+                .header(Header.AUTHORIZATION, "Bearer " + generateBearerToken())
+                .body(JSONUtil.toJsonStr(requestBody))
+                .timeout(10000) // 超时，毫秒
+                .execute().body();
+
+        // 解析响应
+        if (StringUtils.isNotBlank(resultMessage)) {
+            cn.hutool.json.JSONObject jsonObject = JSONUtil.parseObj(resultMessage);
+            if (jsonObject.getBool("success", false)) {
+                cn.hutool.json.JSONObject data = jsonObject.getJSONObject("data");
+                if (data != null) {
+                    cn.hutool.json.JSONArray content = data.getJSONArray("content");
+                    if (content != null && content.size() > 0) {
+                        cn.hutool.json.JSONObject firstContent = content.getJSONObject(0);
+                        if (firstContent != null && "text".equals(firstContent.getStr("type"))) {
+                            String text = firstContent.getStr("text");
+                            if (StringUtils.isNotBlank(text)) {
+                                String trimmedText = text.trim();
+                                if (trimmedText.startsWith("{") || trimmedText.startsWith("[")) {
+                                    try {
+                                        return JSONUtil.parseObj(trimmedText);
+                                    } catch (Exception e) {
+                                        return trimmedText;
+                                    }
+                                } else if ("true".equals(trimmedText)) {
+                                    return true;
+                                } else if ("false".equals(trimmedText)) {
+                                    return false;
+                                } else {
+                                    return trimmedText;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return null;
     }
 }

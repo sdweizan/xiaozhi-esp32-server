@@ -1,6 +1,8 @@
 package xiaozhi.modules.device.controller;
 
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+
 import org.apache.commons.lang3.StringUtils;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.springframework.beans.BeanUtils;
@@ -11,6 +13,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -21,6 +24,7 @@ import xiaozhi.common.user.UserDetail;
 import xiaozhi.common.utils.Result;
 import xiaozhi.modules.device.dto.DeviceManualAddDTO;
 import xiaozhi.modules.device.dto.DeviceRegisterDTO;
+import xiaozhi.modules.device.dto.DeviceToolsCallReqDTO;
 import xiaozhi.modules.device.dto.DeviceUnBindDTO;
 import xiaozhi.modules.device.dto.DeviceUpdateDTO;
 import xiaozhi.modules.device.entity.DeviceEntity;
@@ -124,5 +128,35 @@ public class DeviceController {
         UserDetail user = SecurityUser.getUser();
         deviceService.manualAddDevice(user.getId(), dto);
         return new Result<>();
+    }
+
+    @PostMapping("/tools/list/{deviceId}")
+    @Operation(summary = "获取设备工具列表")
+    @RequiresPermissions("sys:role:normal")
+    public Result<Object> getDeviceTools(@PathVariable String deviceId) {
+        Object toolsData = deviceService.getDeviceTools(deviceId);
+        if (toolsData == null) {
+            return new Result<Object>().error(ErrorCode.DEVICE_NOT_EXIST);
+        }
+
+        return new Result<Object>().ok(toolsData);
+    }
+
+    @PostMapping("/tools/call/{deviceId}")
+    @Operation(summary = "调用设备工具")
+    @RequiresPermissions("sys:role:normal")
+    public Result<Object> callDeviceTool(@PathVariable String deviceId,
+            @Valid @RequestBody DeviceToolsCallReqDTO request) {
+        String toolName = request.getName();
+        Map<String, Object> arguments = request.getArguments();
+
+        Object result = deviceService.callDeviceTool(deviceId, toolName, arguments);
+        if (result == null) {
+            return new Result<Object>().error(ErrorCode.DEVICE_NOT_EXIST);
+        }
+
+        Result<Object> response = new Result<Object>();
+        response.setMsg("Tools called successfully");
+        return response.ok(result);
     }
 }

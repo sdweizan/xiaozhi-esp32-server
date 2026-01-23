@@ -5,6 +5,7 @@ import { getConfig, saveConnectionUrls } from '../../config/manager.js';
 import { getAudioPlayer } from '../audio/player.js';
 import { getAudioRecorder } from '../audio/recorder.js';
 import { getMcpTools, executeMcpTool, setWebSocket as setMcpWebSocket } from '../mcp/tools.js';
+import { uiController } from '../../ui/controller.js'
 
 // WebSocket处理器类
 export class WebSocketHandler {
@@ -73,6 +74,7 @@ export class WebSocketHandler {
     handleTextMessage(message) {
         if (message.type === 'hello') {
             log(`服务器回应：${JSON.stringify(message, null, 2)}`, 'success');
+            uiController.startAIChatSession();
         } else if (message.type === 'tts') {
             this.handleTTSMessage(message);
         } else if (message.type === 'audio') {
@@ -421,7 +423,6 @@ export class WebSocketHandler {
 
             const listenMessage = {
                 type: 'listen',
-                mode: 'manual',
                 state: 'detect',
                 text: text
             };

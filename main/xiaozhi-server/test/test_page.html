@@ -68,8 +68,13 @@
         <canvas id="live2d-stage"></canvas>
 
         <!-- 聊天消息流（弹幕样式） -->
-        <div class="chat-stream" id="chatStream">
-            <!-- 聊天消息将动态插入这里 -->
+        <div class="chat-container">
+            <div class="chat-stream" id="chatStream">
+                <!-- 聊天消息将动态插入这里 -->
+            </div>
+            <div class="chat-ipt" id="chatIpt">
+                <input type="text" id="messageInput" autocomplete="off" placeholder="输入消息，按Enter发送">
+            </div>
         </div>
 
         <!-- 底部控制栏 -->
@@ -128,7 +133,7 @@
                             <div class="config-row">
                                 <div class="config-item">
                                     <label for="deviceMac">设备MAC:</label>
-                                    <input type="text" id="deviceMac" placeholder="device-id" readonly>
+                                    <input type="text" id="deviceMac" placeholder="device-id">
                                 </div>
                             </div>
                             <div class="config-row">
@@ -138,7 +143,7 @@
                                 </div>
                                 <div class="config-item">
                                     <label for="deviceName">设备名称:</label>
-                                    <input type="text" id="deviceName" value="Web测试设备" placeholder="deviceName">
+                                    <input type="text" id="deviceName" value="Web测试设备" maxlength="50" placeholder="deviceName">
                                 </div>
                             </div>
                         </div>
@@ -231,8 +236,8 @@
         </div>
     </div>
 
-    <!-- 背景图加载检测 -->
-    <script src="js/ui/bg-image-load-detector.js"></script>
+    <!-- 背景加载 -->
+    <script src="js/ui/background-load.js"></script>
 
     <!-- PIXI.js 2D渲染引擎 -->
     <script src="js/live2d/pixi.js"></script>

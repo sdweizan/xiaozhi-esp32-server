@@ -167,7 +167,7 @@
         </div>
 
         <img loading="lazy" alt="" src="@/assets/home/avatar.png" class="avatar-img" @click="handleAvatarClick" />
-        <span class="el-dropdown-link" @click="handleAvatarClick">
+        <span class="el-user-dropdown" @click="handleAvatarClick">
           {{ userInfo.username || "加载中..." }}
           <i class="el-icon-arrow-down el-icon--right" :class="{ 'rotate-down': userMenuVisible }"></i>
         </span>
@@ -668,6 +668,7 @@ export default {
   align-items: center;
   gap: 10px;
   min-width: 120px;
+  cursor: pointer;
 }
 
 .logo-img {
@@ -843,6 +844,9 @@ export default {
   width: 21px;
   height: 21px;
   flex-shrink: 0;
+  cursor: pointer;
+}
+.el-user-dropdown {
   cursor: pointer;
 }
 

@@ -1125,7 +1125,7 @@ export default {
   'voiceClone.training': '訓練中',
   'voiceClone.trainSuccess': '訓練成功',
   'voiceClone.trainFailed': '訓練失敗',
-  'voiceClone.itemsPerPage': '每頁 {items} 條',
+  'voiceClone.itemsPerPage': '{items}條/頁',
   'voiceClone.firstPage': '首頁',
   'voiceClone.prevPage': '上一頁',
   'voiceClone.nextPage': '下一頁',

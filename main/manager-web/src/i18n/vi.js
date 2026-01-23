@@ -1125,7 +1125,7 @@ export default {
   'voiceClone.training': 'Đang huấn luyện',
   'voiceClone.trainSuccess': 'Huấn luyện thành công',
   'voiceClone.trainFailed': 'Huấn luyện thất bại',
-  'voiceClone.itemsPerPage': '{items} mục mỗi trang',
+  'voiceClone.itemsPerPage': '{items} mục/trang',
   'voiceClone.firstPage': 'Trang đầu',
   'voiceClone.prevPage': 'Trang trước',
   'voiceClone.nextPage': 'Trang sau',
