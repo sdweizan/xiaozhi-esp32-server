@@ -18,7 +18,7 @@ FROM bellsoft/liberica-runtime-container:jre-21-glibc
 
 # 安装Nginx和字体库
 RUN apk update && \
-    apk add --no-cache --no-scripts --repository=http://mirrors.aliyun.com/alpine/edge/testing/ \
+    apk add --no-cache --repository=http://mirrors.aliyun.com/alpine/edge/testing/ \
         nginx \
         bash \
         fontconfig \
