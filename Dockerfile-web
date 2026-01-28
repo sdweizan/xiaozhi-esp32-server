@@ -2,7 +2,7 @@
 FROM node:18 as web-builder
 WORKDIR /app
 COPY main/manager-web/package*.json ./
-RUN npm install --registry=https://mirrors.cloud.tencent.com/npm/
+RUN npm install
 COPY main/manager-web .
 RUN npm run build
 
@@ -18,7 +18,7 @@ FROM bellsoft/liberica-runtime-container:jre-21-glibc
 
 # 安装Nginx和字体库
 RUN apk update && \
-    apk add --no-cache --repository=http://mirrors.aliyun.com/alpine/edge/testing/ \
+    apk add --no-cache --repository=http://dl-cdn.alpinelinux.org/alpine/edge/testing/ \
         nginx \
         bash \
         fontconfig \
