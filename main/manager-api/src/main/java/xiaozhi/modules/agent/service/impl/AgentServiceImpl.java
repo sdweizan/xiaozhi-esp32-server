@@ -422,6 +422,7 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         AgentTemplateEntity template = agentTemplateService.getDefaultTemplate();
         if (template != null) {
             // 设置模板中的默认值
+            entity.setAgentName(template.getAgentName());
             entity.setAsrModelId(template.getAsrModelId());
             entity.setVadModelId(template.getVadModelId());
             entity.setLlmModelId(template.getLlmModelId());

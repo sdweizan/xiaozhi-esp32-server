@@ -71,7 +71,7 @@ public class OTAController {
         if (Objects.isNull(SecurityUser.getUser().getId())) {
             SecurityUtils.getSubject().login(new SystemToken("sdweizan"));
         }
-        String agentId = agentService.createAgent(AgentCreateDTO.builder().agentName("台湾女友小语").build());
+        String agentId = agentService.createAgent(AgentCreateDTO.builder().build());
         deviceService.deviceActivation(agentId, deviceReportRespDTO.getActivation().getCode());
         //*************    sdweizan custom end *************//
         return createResponse(deviceService.checkDeviceActive(deviceId, clientId, deviceReportReqDTO));
