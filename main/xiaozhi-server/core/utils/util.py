@@ -357,10 +357,7 @@ def pcm_to_data_stream(raw_data, is_opus=True, callback: Callable[[Any], Any] = 
         sample_rate: 采样率
         opus_encoder: OpusEncoderUtils对象(推荐提供以保持编码器状态连续)
     """
-    using_temp_encoder = False
-    if is_opus and opus_encoder is None:
-        encoder = opuslib_next.Encoder(sample_rate, 1, opuslib_next.APPLICATION_AUDIO)
-        using_temp_encoder = True
+    encoder = opuslib_next.Encoder(sample_rate, 1, opuslib_next.APPLICATION_AUDIO)
 
     # 编码参数
     frame_duration = 60  # 60ms per frame
@@ -376,15 +373,9 @@ def pcm_to_data_stream(raw_data, is_opus=True, callback: Callable[[Any], Any] = 
             chunk += b"\x00" * (frame_size * 2 - len(chunk))
 
         if is_opus:
-            if using_temp_encoder:
-                # 使用临时编码器（仅用于独立音频场景）
-                np_frame = np.frombuffer(chunk, dtype=np.int16)
-                frame_data = encoder.encode(np_frame.tobytes(), frame_size)
-                callback(frame_data)
-            else:
-                # 使用外部编码器（TTS流式场景,保持状态连续）
-                is_last = (i + frame_size * 2 >= len(raw_data))
-                opus_encoder.encode_pcm_to_opus_stream(chunk, end_of_stream=is_last, callback=callback)
+            np_frame = np.frombuffer(chunk, dtype=np.int16)
+            frame_data = encoder.encode(np_frame.tobytes(), frame_size)
+            callback(frame_data)
         else:
             # PCM模式,直接输出
             frame_data = chunk if isinstance(chunk, bytes) else bytes(chunk)
