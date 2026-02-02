@@ -60,17 +60,8 @@ class ASRProvider(ASRProviderBase):
         await super().open_audio_channels(conn)
 
     async def receive_audio(self, conn, audio, audio_have_voice):
-        conn.asr_audio.append(audio)
-        conn.asr_audio = conn.asr_audio[-10:]
-        # 存储音频数据
-        if not hasattr(conn, 'asr_audio_for_voiceprint'):
-            conn.asr_audio_for_voiceprint = []
-        conn.asr_audio_for_voiceprint.append(audio)
-
-        # 当没有音频数据时处理完整语音片段
-        if conn.client_listen_mode != "manual" and not audio and len(conn.asr_audio_for_voiceprint) > 0:
-            await self.handle_voice_stop(conn, conn.asr_audio_for_voiceprint)
-            conn.asr_audio_for_voiceprint = []
+        # 先调用父类方法处理基础逻辑
+        await super().receive_audio(conn, audio, audio_have_voice)
 
         # 如果本次有声音，且之前没有建立连接
         if audio_have_voice and self.asr_ws is None and not self.is_processing:
@@ -164,7 +155,7 @@ class ASRProvider(ASRProviderBase):
         try:
             while self.asr_ws and not conn.stop_event.is_set():
                 # 获取当前连接的音频数据
-                audio_data = getattr(conn, 'asr_audio_for_voiceprint', [])
+                audio_data = conn.asr_audio
                 try:
                     response = await self.asr_ws.recv()
                     result = self.parse_response(response)
@@ -189,7 +180,6 @@ class ASRProvider(ASRProviderBase):
                             ):
                                 logger.bind(tag=TAG).error(f"识别文本：空")
                                 self.text = ""
-                                conn.reset_vad_states()
                                 if len(audio_data) > 15:  # 确保有足够音频数据
                                     await self.handle_voice_stop(conn, audio_data)
                                 break
@@ -200,12 +190,9 @@ class ASRProvider(ASRProviderBase):
                                 if self.enable_multilingual:
                                     continue
 
-                                if conn.client_listen_mode == "manual" and conn.client_voice_stop and len(audio_data) > 0:
+                                if conn.client_listen_mode == "manual" and conn.client_voice_stop and len(audio_data) > 15:
                                     logger.bind(tag=TAG).debug("消息结束收到停止信号，触发处理")
                                     await self.handle_voice_stop(conn, audio_data)
-                                    # 清理音频缓存
-                                    conn.asr_audio.clear()
-                                    conn.reset_vad_states()
                                     break
 
                             for utterance in utterances:
@@ -226,14 +213,10 @@ class ASRProvider(ASRProviderBase):
                                         if conn.client_voice_stop and len(audio_data) > 0:
                                             logger.bind(tag=TAG).debug("消息中途收到停止信号，触发处理")
                                             await self.handle_voice_stop(conn, audio_data)
-                                            # 清理音频缓存
-                                            conn.asr_audio.clear()
-                                            conn.reset_vad_states()
                                         break
                                     else:
                                         # 自动模式下直接覆盖
                                         self.text = current_text
-                                        conn.reset_vad_states()
                                         if len(audio_data) > 15:  # 确保有足够音频数据
                                             await self.handle_voice_stop(conn, audio_data)
                                     break
@@ -262,11 +245,8 @@ class ASRProvider(ASRProviderBase):
                 await self.asr_ws.close()
                 self.asr_ws = None
             self.is_processing = False
-            if conn:
-                if hasattr(conn, 'asr_audio_for_voiceprint'):
-                    conn.asr_audio_for_voiceprint = []
-                if hasattr(conn, 'asr_audio'):
-                    conn.asr_audio = []
+            # 重置所有音频相关状态
+            conn.reset_audio_states()
 
     def stop_ws_connection(self):
         if self.asr_ws:
@@ -408,7 +388,7 @@ class ASRProvider(ASRProviderBase):
             logger.bind(tag=TAG).error(f"原始响应数据: {res.hex()}")
             raise
 
-    async def speech_to_text(self, opus_data, session_id, audio_format):
+    async def speech_to_text(self, opus_data, session_id, audio_format, artifacts=None):
         result = self.text
         self.text = ""  # 清空text
         return result, None
@@ -435,11 +415,3 @@ class ASRProvider(ASRProviderBase):
                 logger.bind(tag=TAG).debug("Doubao decoder resources released")
             except Exception as e:
                 logger.bind(tag=TAG).debug(f"释放Doubao decoder资源时出错: {e}")
-
-        # 清理所有连接的音频缓冲区
-        if hasattr(self, '_connections'):
-            for conn in self._connections.values():
-                if hasattr(conn, 'asr_audio_for_voiceprint'):
-                    conn.asr_audio_for_voiceprint = []
-                if hasattr(conn, 'asr_audio'):
-                    conn.asr_audio = []

@@ -26,10 +26,9 @@ class ListenTextMessageHandler(TextMessageHandler):
                 f"客户端拾音模式：{conn.client_listen_mode}"
             )
         if msg_json["state"] == "start":
-            conn.client_have_voice = True
-            conn.client_voice_stop = False
+            # 设备从播放模式切回录音模式,清除所有音频状态和缓冲区
+            conn.reset_audio_states()
         elif msg_json["state"] == "stop":
-            conn.client_have_voice = True
             conn.client_voice_stop = True
             if conn.asr.interface_type == InterfaceType.STREAM:
                 # 流式模式下，发送结束请求
@@ -38,14 +37,13 @@ class ListenTextMessageHandler(TextMessageHandler):
                 # 非流式模式：直接触发ASR识别
                 if len(conn.asr_audio) > 0:
                     asr_audio_task = conn.asr_audio.copy()
-                    conn.asr_audio.clear()
-                    conn.reset_vad_states()
+                    conn.reset_audio_states()
 
                     if len(asr_audio_task) > 0:
                         await conn.asr.handle_voice_stop(conn, asr_audio_task)
         elif msg_json["state"] == "detect":
             conn.client_have_voice = False
-            conn.asr_audio.clear()
+            conn.reset_audio_states()
             if "text" in msg_json:
                 conn.last_activity_time = time.time() * 1000
                 original_text = msg_json["text"]  # 保留原始文本
