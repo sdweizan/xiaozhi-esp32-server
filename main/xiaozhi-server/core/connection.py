@@ -1166,6 +1166,8 @@ class ConnectionHandler:
 
             if self.tts:
                 await self.tts.close()
+            if self.asr:
+                await self.asr.close()
 
             # 最后关闭线程池（避免阻塞）
             if self.executor:
@@ -1214,11 +1216,21 @@ class ConnectionHandler:
                 f"清理结束: TTS队列大小={self.tts.tts_text_queue.qsize()}, 音频队列大小={self.tts.tts_audio_queue.qsize()}"
             )
 
-    def reset_vad_states(self):
-        self.client_audio_buffer = bytearray()
+    def reset_audio_states(self):
+        """
+        重置所有音频相关状态(VAD + ASR)
+        """
+        # Reset VAD states
+        self.client_audio_buffer.clear()
         self.client_have_voice = False
         self.client_voice_stop = False
-        self.logger.bind(tag=TAG).debug("VAD states reset.")
+        self.client_voice_window.clear()
+        self.last_is_voice = False
+
+        # Clear ASR buffers
+        self.asr_audio.clear()
+
+        self.logger.bind(tag=TAG).debug("All audio states reset.")
 
     def chat_and_close(self, text):
         """Chat with the user and then close the connection"""
