@@ -40,7 +40,9 @@ from config.logger import setup_logging, build_module_string, create_connection_
 from config.manage_api_client import DeviceNotFoundException, DeviceBindException
 from core.utils.prompt_manager import PromptManager
 from core.utils.voiceprint_provider import VoiceprintProvider
+from core.utils.util import get_system_error_response
 from core.utils import textUtils
+
 
 TAG = __name__
 
@@ -135,7 +137,6 @@ class ConnectionHandler:
         self.current_language_tag = None  # 存储当前ASR识别的语言标签
 
         # llm相关变量
-        self.llm_finish_task = True
         self.dialogue = Dialogue()
 
         # tts相关变量
@@ -799,7 +800,6 @@ class ConnectionHandler:
 
         # 为最顶层时新建会话ID和发送FIRST请求
         if depth == 0:
-            self.llm_finish_task = False
             self.sentence_id = str(uuid.uuid4().hex)
             self.dialogue.put(Message(role="user", content=query))
             self.tts.tts_text_queue.put(
@@ -874,46 +874,66 @@ class ConnectionHandler:
         content_arguments = ""
         self.client_abort = False
         emotion_flag = True
-        for response in llm_responses:
-            if self.client_abort:
-                break
-            if self.intent_type == "function_call" and functions is not None:
-                content, tools_call = response
-                if "content" in response:
-                    content = response["content"]
-                    tools_call = None
-                if content is not None and len(content) > 0:
-                    content_arguments += content
+        try:
+            for response in llm_responses:
+                if self.client_abort:
+                    break
+                if self.intent_type == "function_call" and functions is not None:
+                    content, tools_call = response
+                    if "content" in response:
+                        content = response["content"]
+                        tools_call = None
+                    if content is not None and len(content) > 0:
+                        content_arguments += content
 
-                if not tool_call_flag and content_arguments.startswith("<tool_call>"):
-                    # print("content_arguments", content_arguments)
-                    tool_call_flag = True
+                    if not tool_call_flag and content_arguments.startswith("<tool_call>"):
+                        # print("content_arguments", content_arguments)
+                        tool_call_flag = True
 
-                if tools_call is not None and len(tools_call) > 0:
-                    tool_call_flag = True
-                    self._merge_tool_calls(tool_calls_list, tools_call)
-            else:
-                content = response
+                    if tools_call is not None and len(tools_call) > 0:
+                        tool_call_flag = True
+                        self._merge_tool_calls(tool_calls_list, tools_call)
+                else:
+                    content = response
 
-            # 在llm回复中获取情绪表情，一轮对话只在开头获取一次
-            if emotion_flag and content is not None and content.strip():
-                asyncio.run_coroutine_threadsafe(
-                    textUtils.get_emotion(self, content),
-                    self.loop,
-                )
-                emotion_flag = False
-
-            if content is not None and len(content) > 0:
-                if not tool_call_flag:
-                    response_message.append(content)
-                    self.tts.tts_text_queue.put(
-                        TTSMessageDTO(
-                            sentence_id=self.sentence_id,
-                            sentence_type=SentenceType.MIDDLE,
-                            content_type=ContentType.TEXT,
-                            content_detail=content,
-                        )
+                # 在llm回复中获取情绪表情，一轮对话只在开头获取一次
+                if emotion_flag and content is not None and content.strip():
+                    asyncio.run_coroutine_threadsafe(
+                        textUtils.get_emotion(self, content),
+                        self.loop,
                     )
+                    emotion_flag = False
+
+                if content is not None and len(content) > 0:
+                    if not tool_call_flag:
+                        response_message.append(content)
+                        self.tts.tts_text_queue.put(
+                            TTSMessageDTO(
+                                sentence_id=self.sentence_id,
+                                sentence_type=SentenceType.MIDDLE,
+                                content_type=ContentType.TEXT,
+                                content_detail=content,
+                            )
+                        )
+        except Exception as e:
+            self.logger.bind(tag=TAG).error(f"LLM stream processing error: {e}")
+            self.tts.tts_text_queue.put(
+                TTSMessageDTO(
+                    sentence_id=self.sentence_id,
+                    sentence_type=SentenceType.MIDDLE,
+                    content_type=ContentType.TEXT,
+                    content_detail=get_system_error_response(self.config),
+                )
+            )
+            if depth == 0:
+                self.tts.tts_text_queue.put(
+                    TTSMessageDTO(
+                        sentence_id=self.sentence_id,
+                        sentence_type=SentenceType.LAST,
+                        content_type=ContentType.ACTION,
+                    )
+                )
+            return
         # 处理function call
         if tool_call_flag:
             bHasError = False
@@ -994,7 +1014,6 @@ class ConnectionHandler:
                     content_type=ContentType.ACTION,
                 )
             )
-            self.llm_finish_task = True
             # 使用lambda延迟计算，只有在DEBUG级别时才执行get_llm_dialogue()
             self.logger.bind(tag=TAG).debug(
                 lambda: json.dumps(

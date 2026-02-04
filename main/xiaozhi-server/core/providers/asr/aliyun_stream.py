@@ -144,7 +144,7 @@ class ASRProvider(ASRProviderBase):
                 await self.asr_ws.send(pcm_frame)
             except Exception as e:
                 logger.bind(tag=TAG).warning(f"发送音频失败: {str(e)}")
-                await self._cleanup(conn)
+                await self._cleanup()
 
     async def _start_recognition(self, conn):
         """开始识别会话"""
@@ -199,7 +199,7 @@ class ASRProvider(ASRProviderBase):
                 # 获取当前连接的音频数据
                 audio_data = conn.asr_audio
                 try:
-                    response = await asyncio.wait_for(self.asr_ws.recv(), timeout=1.0)
+                    response = await self.asr_ws.recv()
                     result = json.loads(response)
 
                     header = result.get("header", {})
@@ -332,7 +332,7 @@ class ASRProvider(ASRProviderBase):
 
     async def close(self):
         """关闭资源"""
-        await self._cleanup(None)
+        await self._cleanup()
         if hasattr(self, 'decoder') and self.decoder is not None:
             try:
                 del self.decoder

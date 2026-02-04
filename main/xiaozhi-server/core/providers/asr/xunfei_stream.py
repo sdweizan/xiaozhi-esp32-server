@@ -226,9 +226,8 @@ class ASRProvider(ASRProviderBase):
                                     self.text += w
 
                     if status == 2:
-                        if conn.client_listen_mode == "manual":
-                            logger.bind(tag=TAG).debug("收到最终识别结果，触发处理")
-                            await self.handle_voice_stop(conn, conn.asr_audio)
+                        logger.bind(tag=TAG).debug("收到最终识别结果，触发处理")
+                        await self.handle_voice_stop(conn, conn.asr_audio)
                         break
 
                 except asyncio.TimeoutError:
