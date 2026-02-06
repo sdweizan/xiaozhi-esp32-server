@@ -3,7 +3,11 @@ import uuid
 import asyncio
 import websockets
 import opuslib_next
-from typing import List
+from typing import List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core.connection import ConnectionHandler
+
 from config.logger import setup_logging
 from core.providers.asr.base import ASRProviderBase
 from core.providers.asr.dto.dto import InterfaceType
@@ -74,7 +78,7 @@ class ASRProvider(ASRProviderBase):
                 logger.bind(tag=TAG).warning(f"发送音频失败: {str(e)}")
                 await self._cleanup()
 
-    async def _start_recognition(self, conn):
+    async def _start_recognition(self, conn: "ConnectionHandler"):
         """开始识别会话"""
         try:
             # 如果为手动模式,设置超时时长为最大值
@@ -154,7 +158,7 @@ class ASRProvider(ASRProviderBase):
 
         return message
 
-    async def _forward_results(self, conn):
+    async def _forward_results(self, conn: "ConnectionHandler"):
         """转发识别结果"""
         try:
             while not conn.stop_event.is_set():

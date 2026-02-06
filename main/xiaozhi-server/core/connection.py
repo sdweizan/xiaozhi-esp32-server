@@ -78,7 +78,7 @@ class ConnectionHandler:
 
         self.read_config_from_api = self.config.get("read_config_from_api", False)
 
-        self.websocket = None
+        self.websocket: websockets.ServerConnection | None = None
         self.headers = None
         self.device_id = None
         self.client_ip = None
@@ -169,7 +169,7 @@ class ConnectionHandler:
         # 初始化提示词管理器
         self.prompt_manager = PromptManager(self.config, self.logger)
 
-    async def handle_connection(self, ws):
+    async def handle_connection(self, ws: websockets.ServerConnection):
         try:
             # 获取运行中的事件循环（必须在异步上下文中）
             self.loop = asyncio.get_running_loop()
@@ -841,7 +841,8 @@ class ConnectionHandler:
         try:
             # 使用带记忆的对话
             memory_str = None
-            if self.memory is not None:
+            # 仅当query非空（代表用户询问）时查询记忆
+            if self.memory is not None and query:
                 future = asyncio.run_coroutine_threadsafe(
                     self.memory.query_memory(query), self.loop
                 )

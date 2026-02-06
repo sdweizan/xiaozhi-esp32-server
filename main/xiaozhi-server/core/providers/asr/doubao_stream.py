@@ -7,6 +7,10 @@ import opuslib_next
 from core.providers.asr.base import ASRProviderBase
 from config.logger import setup_logging
 from core.providers.asr.dto.dto import InterfaceType
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core.connection import ConnectionHandler
 
 TAG = __name__
 logger = setup_logging()
@@ -34,7 +38,9 @@ class ASRProvider(ASRProviderBase):
 
         # 火山引擎ASR配置
         enable_multilingual = config.get("enable_multilingual", False)
-        self.enable_multilingual = False if str(enable_multilingual).lower() == 'false' else True
+        self.enable_multilingual = (
+            False if str(enable_multilingual).lower() == "false" else True
+        )
         if self.enable_multilingual:
             self.ws_url = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream"
         else:
@@ -59,10 +65,10 @@ class ASRProvider(ASRProviderBase):
     async def open_audio_channels(self, conn):
         await super().open_audio_channels(conn)
 
-    async def receive_audio(self, conn, audio, audio_have_voice):
+    async def receive_audio(self, conn: "ConnectionHandler", audio, audio_have_voice):
         # 先调用父类方法处理基础逻辑
         await super().receive_audio(conn, audio, audio_have_voice)
-
+        
         # 如果本次有声音，且之前没有建立连接
         if audio_have_voice and self.asr_ws is None and not self.is_processing:
             try:
@@ -151,7 +157,7 @@ class ASRProvider(ASRProviderBase):
             except Exception as e:
                 logger.bind(tag=TAG).info(f"发送音频数据时发生错误: {e}")
 
-    async def _forward_asr_results(self, conn):
+    async def _forward_asr_results(self, conn: "ConnectionHandler"):
         try:
             while self.asr_ws and not conn.stop_event.is_set():
                 # 获取当前连接的音频数据
@@ -172,8 +178,9 @@ class ASRProvider(ASRProviderBase):
                             utterances = payload["result"].get("utterances", [])
                             # 检查duration和空文本的情况
                             if (
-                                not self.enable_multilingual # 注意：多语种模式不返回中间结果，需要等待最终结果
-                                and payload.get("audio_info", {}).get("duration", 0) > 2000
+                                not self.enable_multilingual  # 注意：多语种模式不返回中间结果，需要等待最终结果
+                                and payload.get("audio_info", {}).get("duration", 0)
+                                > 2000
                                 and not utterances
                                 and not payload["result"].get("text")
                                 and conn.client_listen_mode != "manual"
@@ -218,7 +225,9 @@ class ASRProvider(ASRProviderBase):
                                         # 自动模式下直接覆盖
                                         self.text = current_text
                                         if len(audio_data) > 15:  # 确保有足够音频数据
-                                            await self.handle_voice_stop(conn, audio_data)
+                                            await self.handle_voice_stop(
+                                                conn, audio_data
+                                            )
                                     break
                         elif "error" in payload:
                             error_msg = payload.get("error", "未知错误")
@@ -260,7 +269,9 @@ class ASRProvider(ASRProviderBase):
             try:
                 # 发送结束标记的音频帧（gzip压缩的空数据）
                 empty_payload = gzip.compress(b"")
-                last_audio_request = bytearray(self.generate_last_audio_default_header())
+                last_audio_request = bytearray(
+                    self.generate_last_audio_default_header()
+                )
                 last_audio_request.extend(len(empty_payload).to_bytes(4, "big"))
                 last_audio_request.extend(empty_payload)
                 await self.asr_ws.send(last_audio_request)
@@ -406,9 +417,9 @@ class ASRProvider(ASRProviderBase):
                 pass
             self.forward_task = None
         self.is_processing = False
-        
+
         # 显式释放decoder资源
-        if hasattr(self, 'decoder') and self.decoder is not None:
+        if hasattr(self, "decoder") and self.decoder is not None:
             try:
                 del self.decoder
                 self.decoder = None

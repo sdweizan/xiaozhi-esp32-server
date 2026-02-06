@@ -1,4 +1,7 @@
-from typing import List, Dict
+from typing import List, Dict, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core.connection import ConnectionHandler
 from ..base import IntentProviderBase
 from plugins_func.functions.play_music import initialize_music_handler
 from config.logger import setup_logging
@@ -129,7 +132,9 @@ class IntentProvider(IntentProviderBase):
             logger.bind(tag=TAG).error(f"Error in generating reply result: {e}")
             return get_system_error_response(self.config)
 
-    async def detect_intent(self, conn, dialogue_history: List[Dict], text: str) -> str:
+    async def detect_intent(
+        self, conn: "ConnectionHandler", dialogue_history: List[Dict], text: str
+    ) -> str:
         if not self.llm:
             raise ValueError("LLM provider not set")
         if conn.func_handler is None:

@@ -454,6 +454,12 @@ def check_asr_update(before_config, new_config):
     update_asr = False
     current_asr_module = before_config["selected_module"]["ASR"]
     new_asr_module = new_config["selected_module"]["ASR"]
+
+    # 如果模块名称不同，就需要更新
+    if current_asr_module != new_asr_module:
+        return True
+
+    # 如果模块名称相同，再比较类型
     current_asr_type = (
         current_asr_module
         if "type" not in before_config["ASR"][current_asr_module]

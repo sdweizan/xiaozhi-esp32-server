@@ -149,10 +149,22 @@ class MemoryProvider(MemoryProviderBase):
 
         msgStr = ""
         for msg in msgs:
+            content = msg.content
+
+            # Extract content from JSON format if present (for ASR with emotion/language tags)
+            try:
+                if content and content.strip().startswith("{") and content.strip().endswith("}"):
+                    data = json.loads(content)
+                    if "content" in data:
+                        content = data["content"]
+            except (json.JSONDecodeError, KeyError, TypeError):
+                # If parsing fails, use original content
+                pass
+
             if msg.role == "user":
-                msgStr += f"User: {msg.content}\n"
+                msgStr += f"User: {content}\n"
             elif msg.role == "assistant":
-                msgStr += f"Assistant: {msg.content}\n"
+                msgStr += f"Assistant: {content}\n"
         if self.short_memory and len(self.short_memory) > 0:
             msgStr += "历史记忆：\n"
             msgStr += self.short_memory
