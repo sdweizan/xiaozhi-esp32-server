@@ -23,7 +23,8 @@ RUN apk update && \
         bash \
         fontconfig \
         ttf-dejavu \
-    && rm -rf /var/cache/apk/*
+    && rm -rf /var/cache/apk/* \
+    && mkdir -p /run/nginx /var/log/nginx /var/tmp/nginx /etc/nginx/conf.d
 
 # 复制项目自带的中文字体
 COPY main/manager-web/public/generator/static/fonts/*.ttf /usr/share/fonts/
