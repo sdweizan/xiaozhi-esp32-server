@@ -7,11 +7,10 @@ import traceback
 import websockets
 
 from typing import Callable, Any
-from core.utils.tts import MarkdownCleaner
 from config.logger import setup_logging
-from core.utils import opus_encoder_utils
 from core.utils.util import check_model_key
 from core.providers.tts.base import TTSProviderBase
+from core.utils.tts import MarkdownCleaner, convert_percentage_to_range
 from core.providers.tts.dto.dto import SentenceType, ContentType, InterfaceType
 
 
@@ -177,6 +176,22 @@ class TTSProvider(TTSProviderBase):
         self.audio_params = {**default_audio_params, **config.get("audio_params", {})}
         self.additions = {**default_additions, **config.get("additions", {})}
         self.mix_speaker = {**default_mix_speaker, **config.get("mix_speaker", {})}
+
+        # 应用百分比调整（如果存在），否则使用公有化配置
+        if "ttsVolume" in config:
+            self.audio_params["loudness_rate"] = int(convert_percentage_to_range(
+                config["ttsVolume"], min_val=-50, max_val=100, base_val=0
+            ))
+
+        if "ttsRate" in config:
+            self.audio_params["speech_rate"] = int(convert_percentage_to_range(
+                config["ttsRate"], min_val=-50, max_val=100, base_val=0
+            ))
+
+        if "ttsPitch" in config:
+            self.additions["post_process"]["pitch"] = int(convert_percentage_to_range(
+                config["ttsPitch"], min_val=-12, max_val=12, base_val=0
+            ))
 
         self.ws_url = config.get("ws_url")
         self.authorization = config.get("authorization")
@@ -681,6 +696,20 @@ class TTSProvider(TTSProviderBase):
                     "req_params": req_params
                 }
             )
+        )
+
+    def audio_to_opus_data_stream(
+        self, audio_file_path, callback: Callable[[Any], Any] = None
+    ):
+        """重写父类方法：使用独立的临时编码器处理音频文件，避免与TTS流式编码器并发冲突。
+        双流式TTS中，monitor任务在event loop线程接收TTS音频并使用self.opus_encoder编码，
+        同时tts_text_priority_thread处理音乐文件也使用self.opus_encoder，
+        共享的encoder.buffer非线程安全，并发访问会导致SILK resampler断言失败。
+        """
+        from core.utils.util import audio_to_data_stream
+        return audio_to_data_stream(
+            audio_file_path, is_opus=True, callback=callback,
+            sample_rate=self.conn.sample_rate, opus_encoder=None
         )
 
     def wav_to_opus_data_audio_raw_stream(self, raw_data_var, is_end=False, callback: Callable[[Any], Any]=None):
