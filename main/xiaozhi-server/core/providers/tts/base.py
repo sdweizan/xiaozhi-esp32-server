@@ -45,7 +45,39 @@ class TTSProviderBase(ABC):
         self.report_on_last = False
         # sentence_id 到文本的映射，用于流式TTS获取正确的字幕文本
         self._sentence_text_map = {}
+        # 加载替换词，用于一次性正则替换
+        raw_words = config.get("correct_words", [])
+        self.correct_words = {}
+        for item in raw_words:
+            parts = item.split("|", 1)
+            if len(parts) == 2:
+                self.correct_words[parts[0]] = parts[1]
+        # 构建正则表达式，使用最长匹配优先（排序后转义拼接）
+        if self.correct_words:
+            # 按key长度降序排列，长的先匹配，避免短词部分干扰
+            sorted_keys = sorted(self.correct_words.keys(), key=len, reverse=True)
+            pattern_str = "|".join(re.escape(k) for k in sorted_keys)
+            self._correct_words_pattern = re.compile(pattern_str)
+            # 构建反向替换正则，用于将TTS服务返回的替换后文本还原为原始文本（字幕显示）
+            reverse_map = {v: k for k, v in self.correct_words.items()}
+            sorted_reverse_keys = sorted(reverse_map.keys(), key=len, reverse=True)
+            reverse_pattern_str = "|".join(re.escape(k) for k in sorted_reverse_keys)
+            self._reverse_words_pattern = re.compile(reverse_pattern_str)
+            self._reverse_words_map = reverse_map
+            # 流式滑动窗口：按首字分组的替换词字典，用于快速查找
+            self._words_by_first_char = {}
+            for key in sorted_keys:  # 使用已按长度降序排列的keys，确保长词优先匹配
+                first_char = key[0] if key else ""
+                if first_char not in self._words_by_first_char:
+                    self._words_by_first_char[first_char] = []
+                self._words_by_first_char[first_char].append(key)
+        else:
+            self._correct_words_pattern = None
+            self._reverse_words_pattern = None
+            self._reverse_words_map = None
 
+        # 流式滑动窗口：待匹配的缓存文本
+        self._pending_prefix = ""
         self.tts_text_buff = []
         self.punctuations = (
             "。",
@@ -89,7 +121,12 @@ class TTSProviderBase(ABC):
         self.before_stop_play_files.append((file_audio, text))
 
     def to_tts_stream(self, text, opus_handler: Callable[[bytes], None] = None) -> None:
+        # 保留原始文本用于显示/上报
+        original_text = text
         text = MarkdownCleaner.clean_markdown(text)
+        # 使用正则一次性替换，避免重复遍历和部分匹配问题
+        if self._correct_words_pattern:
+            text = self._correct_words_pattern.sub(lambda m: self.correct_words[m.group(0)], text)
         max_repeat_time = 5
         if self.delete_audio_file:
             # 需要删除文件的直接转为音频数据
@@ -97,7 +134,8 @@ class TTSProviderBase(ABC):
                 try:
                     audio_bytes = asyncio.run(self.text_to_speak(text, None))
                     if audio_bytes:
-                        self.tts_audio_queue.put((SentenceType.FIRST, None, text, getattr(self, 'current_sentence_id', None)))
+                        # 使用原始文本用于显示/上报
+                        self.tts_audio_queue.put((SentenceType.FIRST, None, original_text, getattr(self, 'current_sentence_id', None)))
                         audio_bytes_to_data_stream(
                             audio_bytes,
                             file_type=self.audio_file_type,
@@ -111,16 +149,16 @@ class TTSProviderBase(ABC):
                         max_repeat_time -= 1
                 except Exception as e:
                     logger.bind(tag=TAG).warning(
-                        f"语音生成失败{5 - max_repeat_time + 1}次: {text}，错误: {e}"
+                        f"语音生成失败{5 - max_repeat_time + 1}次: {original_text}，错误: {e}"
                     )
                     max_repeat_time -= 1
             if max_repeat_time > 0:
                 logger.bind(tag=TAG).info(
-                    f"语音生成成功: {text}，重试{5 - max_repeat_time}次"
+                    f"语音生成成功: {original_text}，重试{5 - max_repeat_time}次"
                 )
             else:
                 logger.bind(tag=TAG).error(
-                    f"语音生成失败: {text}，请检查网络或服务是否正常"
+                    f"语音生成失败: {original_text}，请检查网络或服务是否正常"
                 )
             return None
         else:
@@ -131,7 +169,7 @@ class TTSProviderBase(ABC):
                         asyncio.run(self.text_to_speak(text, tmp_file))
                     except Exception as e:
                         logger.bind(tag=TAG).warning(
-                            f"语音生成失败{5 - max_repeat_time + 1}次: {text}，错误: {e}"
+                            f"语音生成失败{5 - max_repeat_time + 1}次: {original_text}，错误: {e}"
                         )
                         # 未执行成功，删除文件
                         if os.path.exists(tmp_file):
@@ -140,20 +178,24 @@ class TTSProviderBase(ABC):
 
                 if max_repeat_time > 0:
                     logger.bind(tag=TAG).info(
-                        f"语音生成成功: {text}:{tmp_file}，重试{5 - max_repeat_time}次"
+                        f"语音生成成功: {original_text}:{tmp_file}，重试{5 - max_repeat_time}次"
                     )
                 else:
                     logger.bind(tag=TAG).error(
-                        f"语音生成失败: {text}，请检查网络或服务是否正常"
+                        f"语音生成失败: {original_text}，请检查网络或服务是否正常"
                     )
-                self.tts_audio_queue.put((SentenceType.FIRST, None, text, getattr(self, 'current_sentence_id', None)))
+                self.tts_audio_queue.put((SentenceType.FIRST, None, original_text, getattr(self, 'current_sentence_id', None)))
                 self._process_audio_file_stream(tmp_file, callback=opus_handler)
             except Exception as e:
                 logger.bind(tag=TAG).error(f"Failed to generate TTS file: {e}")
                 return None
     
     def to_tts(self, text):
+        # 保留原始文本用于日志/显示
+        original_text = text
         text = MarkdownCleaner.clean_markdown(text)
+        if self._correct_words_pattern:
+            text = self._correct_words_pattern.sub(lambda m: self.correct_words[m.group(0)], text)
         max_repeat_time = 5
         if self.delete_audio_file:
             # 需要删除文件的直接转为音频数据
@@ -174,16 +216,16 @@ class TTSProviderBase(ABC):
                         max_repeat_time -= 1
                 except Exception as e:
                     logger.bind(tag=TAG).warning(
-                        f"语音生成失败{5 - max_repeat_time + 1}次: {text}，错误: {e}"
+                        f"语音生成失败{5 - max_repeat_time + 1}次: {original_text}，错误: {e}"
                     )
                     max_repeat_time -= 1
             if max_repeat_time > 0:
                 logger.bind(tag=TAG).info(
-                    f"语音生成成功: {text}，重试{5 - max_repeat_time}次"
+                    f"语音生成成功: {original_text}，重试{5 - max_repeat_time}次"
                 )
             else:
                 logger.bind(tag=TAG).error(
-                    f"语音生成失败: {text}，请检查网络或服务是否正常"
+                    f"语音生成失败: {original_text}，请检查网络或服务是否正常"
                 )
             return None
         else:
@@ -194,7 +236,7 @@ class TTSProviderBase(ABC):
                         asyncio.run(self.text_to_speak(text, tmp_file))
                     except Exception as e:
                         logger.bind(tag=TAG).warning(
-                            f"语音生成失败{5 - max_repeat_time + 1}次: {text}，错误: {e}"
+                            f"语音生成失败{5 - max_repeat_time + 1}次: {original_text}，错误: {e}"
                         )
                         # 未执行成功，删除文件
                         if os.path.exists(tmp_file):
@@ -203,11 +245,11 @@ class TTSProviderBase(ABC):
 
                 if max_repeat_time > 0:
                     logger.bind(tag=TAG).info(
-                        f"语音生成成功: {text}:{tmp_file}，重试{5 - max_repeat_time}次"
+                        f"语音生成成功: {original_text}:{tmp_file}，重试{5 - max_repeat_time}次"
                     )
                 else:
                     logger.bind(tag=TAG).error(
-                        f"语音生成失败: {text}，请检查网络或服务是否正常"
+                        f"语音生成失败: {original_text}，请检查网络或服务是否正常"
                     )
 
                 return tmp_file
@@ -313,6 +355,13 @@ class TTSProviderBase(ABC):
         """
         if sentence_id in self._sentence_text_map:
             del self._sentence_text_map[sentence_id]
+
+    def _restore_original_text(self, text):
+        if not self._reverse_words_pattern or not text:
+            return text
+        return self._reverse_words_pattern.sub(
+            lambda m: self._reverse_words_map[m.group(0)], text
+        )
 
     # 这里默认是非流式的处理方式
     # 流式处理方式请在子类中重写
@@ -524,3 +573,64 @@ class TTSProviderBase(ABC):
             if config_key in config:
                 val = convert_percentage_to_range(config[config_key], min_val, max_val, base_val)
                 setattr(self, attr_name, transform(val) if transform else val)
+
+    def _match_stream_text(self, text):
+        """流式文本滑动窗口匹配，用于处理跨分片的替换词
+
+        Args:
+            text: 输入的文本片段
+
+        Returns:
+            tuple: (确定的文本列表, 剩余待匹配的前缀)
+        """
+        if not self.correct_words or not text:
+            return [text] if text else [], ""
+
+        result = []
+        pending = self._pending_prefix
+        i = 0
+
+        while i < len(text):
+            char = text[i]
+
+            # 尝试：pending + 当前字符 是否能匹配替换词
+            test_text = pending + char
+
+            matched = False
+            # 遍历可能匹配的替换词
+            candidates = self._words_by_first_char.get(pending[0], []) if pending else self._words_by_first_char.get(char, [])
+            for key in candidates:
+                if test_text == key:
+                    # 完整匹配，替换后发送
+                    result.append(self.correct_words[key])
+                    pending = ""
+                    matched = True
+                    break
+                elif key.startswith(test_text):
+                    # 是替换词的前缀，继续等待
+                    pending = test_text
+                    matched = True
+                    break
+
+            if matched:
+                i += 1
+                continue
+
+            # 没有匹配到更长的词，pending 的内容确定可以发送
+            if pending:
+                result.append(pending)
+                pending = ""
+
+            # 检查当前字符是否是某个替换词的开头
+            if char in self._words_by_first_char:
+                pending = char
+            else:
+                result.append(char)
+
+            i += 1
+
+        return result, pending
+
+    def reset_stream_state(self):
+        """重置流式处理状态，用于会话开始时清理残留状态"""
+        self._pending_prefix = ""

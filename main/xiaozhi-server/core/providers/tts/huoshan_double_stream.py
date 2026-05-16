@@ -300,6 +300,8 @@ class TTSProvider(TTSProviderBase):
                 )
 
                 if message.sentence_type == SentenceType.FIRST:
+                    # 重置流式处理状态
+                    self.reset_stream_state()
                     # 初始化参数
                     try:
                         if not getattr(self.conn, "sentence_id", None): 
@@ -372,8 +374,14 @@ class TTSProvider(TTSProviderBase):
             filtered_text = MarkdownCleaner.clean_markdown(text)
 
             if filtered_text:
-                # 发送文本
-                await self.send_text(self.voice, filtered_text, self.conn.sentence_id)
+                # 使用滑动窗口匹配处理跨分片的替换词
+                confirmed_texts, self._pending_prefix = self._match_stream_text(filtered_text)
+
+                # 发送每个确定的文本片段
+                for txt in confirmed_texts:
+                    if txt and self.ws:
+                        await self.send_text(self.voice, txt, self.conn.sentence_id)
+
             return
         except Exception as e:
             logger.bind(tag=TAG).error(f"发送TTS文本失败: {str(e)}")
@@ -512,9 +520,9 @@ class TTSProvider(TTSProviderBase):
                         json_data = json.loads(res.payload.decode("utf-8"))
                         self.tts_text = json_data.get("text", "")
                         logger.bind(tag=TAG).debug(f"句子语音生成开始: {self.tts_text}")
-                        self.tts_audio_queue.put(
-                            (SentenceType.FIRST, [], self.tts_text)
-                        )
+                        # 将TTS服务返回的替换后文本还原为原始文本，用于字幕显示
+                        display_text = self._restore_original_text(self.tts_text)
+                        self.tts_audio_queue.put((SentenceType.FIRST, [], display_text))
                     elif (
                         res.optional.event == EVENT_TTSResponse
                         and res.header.message_type == AUDIO_ONLY_RESPONSE
