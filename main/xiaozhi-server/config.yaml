@@ -171,6 +171,19 @@ plugins:
     api_key: "ragflow-xxx"
     # ragflow知识库id
     dataset_ids: ["123456789"]
+  # 联网搜索插件配置
+  # 支持秘塔(metaso)和Tavily两个搜索源
+  # 秘塔API Key申请：https://metaso.cn/search-api/api-keys
+  # Tavily API Key申请：https://app.tavily.com/home
+  web_search:
+    # 搜索源：metaso / tavily
+    provider: "metaso"
+    # 工具描述，用于告知LLM何时调用此工具，可根据需要自定义
+    description: "联网搜索工具。当用户明确需要联网搜索问题时使用此工具。"
+    # 返回结果数量（默认5）
+    max_results: 5
+    # 秘塔API Key（mk-前缀） / Tavily API Key（tvly-前缀）
+    api_key: "mk-xxx"
 # 声纹识别配置
 voiceprint:
   # 声纹接口地址
@@ -253,6 +266,7 @@ Intent:
     # 系统默认已经记载"handle_exit_intent(退出识别)"、"play_music(音乐播放)"插件，请勿重复加载
     # 下面是加载查天气、角色切换、加载查新闻的插件示例
     functions:
+      - web_search
       - get_weather
       - get_news_from_newsnow
       - play_music
@@ -264,6 +278,7 @@ Intent:
     # 下面是加载查天气、角色切换、加载查新闻的插件示例
     functions:
       - change_role
+      - web_search                  # 联网搜索
       - get_weather
       # - search_from_ragflow
       # - get_news_from_chinanews
@@ -1053,36 +1068,6 @@ TTS:
     output_dir: tmp/
     access_token: "你的302API密钥"
     # language: "中文"  # 指定输出语种,如:中文、英语、日语、韩语等,请根据所选音色支持的语言进行设置,不填则默认为中文
-  GizwitsTTS:
-    type: doubao
-    # 火山引擎作为基座，可以完全使用企业级火山引擎语音合成服务
-    # 前一万名注册的用户，将送5元体验金额
-    # 获取API Key地址：https://agentrouter.gizwitsapi.com/panel/token
-    api_url: https://bytedance.gizwitsapi.com/api/v1/tts
-    authorization: "Bearer "
-    # 湾湾小何音色
-    voice: "zh_female_wanwanxiaohe_moon_bigtts"
-    output_dir: tmp/
-    access_token: "你的机智云API key"
-    # language: "中文"  # 指定输出语种,如:中文、英语、日语、韩语等,请根据所选音色支持的语言进行设置,不填则默认为中文
-  ACGNTTS:
-    #在线网址：https://acgn.ttson.cn/
-    #token购买：www.ttson.cn
-    #开发相关疑问请提交至网站上的qq
-    #角色id获取地址：ctrl+f快速检索角色——网站管理者不允许发布,可询问网站管理者
-    #各参数意义见开发文档：https://www.yuque.com/alexuh/skmti9/wm6taqislegb02gd?singleDoc#
-    type: ttson
-    token: your_token
-    voice_id: 1695
-    speed_factor: 1
-    pitch_factor: 0
-    volume_change_dB: 0
-    to_lang: ZH
-    url: https://u95167-bd74-2aef8085.westx.seetacloud.com:8443/flashsummary/tts?token=
-    format: mp3
-    output_dir: tmp/
-    emotion: 1
-    # language: "中文"  # 指定输出语种,如:中文、英语、日语、韩语等,请根据所选音色支持的语言进行设置,不填则默认为中文
   OpenAITTS:
     # openai官方文本转语音服务，可支持全球大多数语种
     type: openai
@@ -1120,18 +1105,6 @@ TTS:
     headers: # 自定义请求头
       # Authorization: Bearer xxxx
     format: mp3 # 接口返回的音频格式
-    output_dir: tmp/
-    # language: "中文"  # 指定输出语种,如:中文、英语、日语、韩语等,请根据所选音色支持的语言进行设置,不填则默认为中文
-  LinkeraiTTS:
-    type: linkerai
-    api_url: https://tts.linkerai.cn/tts
-    audio_format: "pcm"
-    # 默认的access_token供大家测试时免费使用的，此access_token请勿用于商业用途
-    # 如果效果不错，可自行申请token，申请地址：https://linkerai.cn
-    # 各参数意义见开发文档：https://tts.linkerai.cn/docs
-    # 支持声音克隆，可自行上传音频，填入voice参数，voice参数为空时，使用默认声音
-    access_token: "U4YdYXVfpwWnk2t5Gp822zWPCuORyeJL"
-    voice: "OUeAo1mhq6IBExi"
     output_dir: tmp/
     # language: "中文"  # 指定输出语种,如:中文、英语、日语、韩语等,请根据所选音色支持的语言进行设置,不填则默认为中文
   PaddleSpeechTTS:

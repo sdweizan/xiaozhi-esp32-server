@@ -146,40 +146,32 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         QueryWrapper<AgentEntity> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("user_id", userId).orderByDesc("created_at");
 
-        // 如果有搜索关键词，根据搜索类型添加相应的查询条件
         if (StringUtils.isNotBlank(keyword)) {
-            if ("mac".equals(searchType)) {
-                // 按MAC地址搜索：先搜索设备，再获取对应的智能体
+            queryWrapper.and(w -> {
+                // 按名称搜索
+                w.like("agent_name", keyword);
+
+                // 按MAC地址搜索：先查设备，再获取对应的智能体ID
                 List<DeviceEntity> devices = Optional
-                        .ofNullable(deviceService.searchDevicesByMacAddress(keyword, userId)).orElseGet(ArrayList::new);
-                // 获取设备对应的智能体ID列表
+                        .ofNullable(deviceService.searchDevicesByMacAddress(keyword, userId))
+                        .orElseGet(ArrayList::new);
                 List<String> agentIds = devices.stream()
                         .map(DeviceEntity::getAgentId)
                         .distinct()
                         .collect(Collectors.toList());
                 if (ToolUtil.isNotEmpty(agentIds)) {
-                    queryWrapper.in("id", agentIds);
-                } else {
-                    return new ArrayList<>();
+                    w.or().in("id", agentIds);
                 }
-            } else {
-                // 按名称搜索（默认）：同时搜索智能体名称和标签名
+
+                // 按标签名搜索
                 List<String> tagAgentIds = agentTagService.getAgentIdsByTagName(keyword);
                 if (ToolUtil.isNotEmpty(tagAgentIds)) {
-                    queryWrapper.and(wrapper -> wrapper
-                            .like("agent_name", keyword)
-                            .or()
-                            .in("id", tagAgentIds));
-                } else {
-                    queryWrapper.like("agent_name", keyword);
+                    w.or().in("id", tagAgentIds);
                 }
-            }
+            });
         }
 
-        // 执行查询
         List<AgentEntity> agentEntities = baseDao.selectList(queryWrapper);
-
-        // 转换为DTO并设置所有必要字段
         return agentEntities.stream().map(this::buildAgentDTO).collect(Collectors.toList());
     }
 

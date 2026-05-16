@@ -2,6 +2,7 @@ import os
 import sys
 import copy
 import json
+import re
 import uuid
 import time
 import queue
@@ -51,6 +52,26 @@ auto_import_modules("plugins_func.functions")
 
 class TTSException(RuntimeError):
     pass
+
+# direct_answer 虚拟工具定义
+# 不是真实工具，是路由机制：将"调不调工具"的二选一变为"调哪个"的多选，防止小模型误触发真实工具
+DIRECT_ANSWER_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "direct_answer",
+        "description": "当用户的请求不匹配其他任何工具时，可用此选项直接回复。将回复内容写在response参数里。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "response": {
+                    "type": "string",
+                    "description": "你回复用户的完整内容",
+                },
+            },
+            "required": ["response"],
+        },
+    },
+}
 
 
 class ConnectionHandler:
@@ -520,9 +541,10 @@ class ConnectionHandler:
             self.logger.bind(tag=TAG).debug("系统提示词已增强更新")
 
     def _inject_tool_call_fewshot(self):
-        """注入工具调用 few-shot 示例到对话历史，帮助模型建立正确的工具调用三段式模式。
-        参考 Action.RECORD 的 assistant(tool_calls) → tool(result) → assistant(response) 模式，
-        让模型从第一轮对话就能看到正确的工具调用行为，避免上下文污染导致工具调用退化。
+        """注入工具调用 few-shot 示例到对话历史。
+        结构：正样本（工具调用示例）放在动态 system 之前，可命中前缀缓存；
+        负样本（直接回答示例）放在动态 system 之后、紧挨真实用户消息，
+        确保模型在处理用户消息前最后看到的是"不调工具"的行为模式。
         """
         if self.intent_type != "function_call":
             return
@@ -533,9 +555,29 @@ class ConnectionHandler:
         if not tools:
             return
 
-        # 根据可用工具动态构建 few-shot 示例
         tool_names = {t.get("function", {}).get("name") for t in tools}
 
+        # === few-shot 示例（is_temporary）===
+        # 展示 direct_answer 携带 response 参数的用法，一次调用完成回复
+
+        # 示例1：direct_answer（回复内容写在 response 参数里，无需递归）
+        da_tc_id = "fewshot_da_001"
+        self.dialogue.put(Message(role="user", content="给我讲个故事吧", is_temporary=True))
+        self.dialogue.put(Message(
+            role="assistant",
+            tool_calls=[{
+                "id": da_tc_id,
+                "function": {"arguments": '{"response": "好呀，你想听什么类型的呀？童话、冒险还是搞笑的？选一个我给你开讲~"}', "name": "direct_answer"},
+                "type": "function", "index": 0,
+            }],
+            is_temporary=True,
+        ))
+        self.dialogue.put(Message(
+            role="tool", tool_call_id=da_tc_id,
+            content="已直接回复", is_temporary=True,
+        ))
+
+        # 示例2：真实工具调用（handle_exit_intent）
         if "handle_exit_intent" in tool_names:
             tc_id = "fewshot_exit_001"
             self.dialogue.put(Message(role="user", content="拜拜", is_temporary=True))
@@ -555,43 +597,6 @@ class ConnectionHandler:
             self.dialogue.put(Message(
                 role="assistant", content="再见，下次再聊~", is_temporary=True,
             ))
-
-        if "play_music" in tool_names:
-            tc_id = "fewshot_music_001"
-            self.dialogue.put(Message(role="user", content="放首歌", is_temporary=True))
-            self.dialogue.put(Message(
-                role="assistant",
-                tool_calls=[{
-                    "id": tc_id,
-                    "function": {"arguments": '{"song_name": "random"}', "name": "play_music"},
-                    "type": "function", "index": 0,
-                }],
-                is_temporary=True,
-            ))
-            self.dialogue.put(Message(
-                role="tool", tool_call_id=tc_id,
-                content="正在为您播放音乐", is_temporary=True,
-            ))
-            self.dialogue.put(Message(
-                role="assistant", content="好嘞，给你安排上~", is_temporary=True,
-            ))
-
-        # 负向示例：用户请求普通对话内容时，直接回答，不调用任何工具
-        # 帮助弱模型建立"该调才调、不该调不调"的判断能力
-        # 注意：示例回复不能包含具体的创作内容（故事、诗歌等），
-        # 否则弱模型会直接复述示例内容，而无法泛化出正确的行为模式
-        self.dialogue.put(Message(role="user", content="给我讲个故事吧", is_temporary=True))
-        self.dialogue.put(Message(
-            role="assistant",
-            content="好呀，你想听什么类型的呀？童话、冒险还是搞笑的？选一个我给你开讲~",
-            is_temporary=True,
-        ))
-        self.dialogue.put(Message(role="user", content="你知道为什么天空是蓝色的吗", is_temporary=True))
-        self.dialogue.put(Message(
-            role="assistant",
-            content="天空看起来是蓝色，是因为阳光穿过大气层的时候，蓝色光波长短，被空气分子散射得最厉害，所以我们抬头一看就是满眼蓝色啦。",
-            is_temporary=True,
-        ))
 
         self.logger.bind(tag=TAG).debug("已注入工具调用 few-shot 示例")
 
@@ -948,6 +953,10 @@ class ConnectionHandler:
                 and not force_final_answer
         ):
             functions = self.func_handler.get_functions()
+            # 仅在第一层调用时注入 direct_answer 虚拟工具
+            # 递归调用（depth>0）不注入，避免模型在生成文本回复时再次调 direct_answer 导致循环
+            if functions is not None and depth == 0:
+                functions.append(DIRECT_ANSWER_TOOL)
 
         response_message = []
 
@@ -1006,15 +1015,40 @@ class ConnectionHandler:
                     if tools_call is not None and len(tools_call) > 0:
                         tool_call_flag = True
                         self._merge_tool_calls(tool_calls_list, tools_call)
+
+                    # 流式提取 direct_answer 的 response 参数，实时送 TTS
+                    # 使用安全缓冲区，防止 JSON 闭合符号泄漏到 TTS
+                    _DA_STREAM_BUFFER = 5
+                    for tc in tool_calls_list:
+                        if tc["name"] == "direct_answer" and tc.get("arguments"):
+                            da_text = self._extract_direct_answer_response(tc["arguments"])
+                            sent_len = tc.get("_da_sent", 0)
+                            if da_text and len(da_text) > sent_len:
+                                safe_end = max(sent_len, len(da_text) - _DA_STREAM_BUFFER)
+                                if safe_end > sent_len:
+                                    new_part = da_text[sent_len:safe_end]
+                                    # 清理 delta 中可能泄漏的 JSON 闭合垃圾
+                                    new_part = self._clean_response_garbage(new_part)
+                                    if new_part:
+                                        tc["_da_sent"] = safe_end
+                                        self.tts.tts_text_queue.put(
+                                            TTSMessageDTO(
+                                                sentence_id=current_sentence_id,
+                                                sentence_type=SentenceType.MIDDLE,
+                                                content_type=ContentType.TEXT,
+                                                content_detail=new_part,
+                                            )
+                                        )
                 else:
                     content = response
 
                 # 在llm回复中获取情绪表情，一轮对话只在开头获取一次
                 if emotion_flag and content is not None and content.strip():
-                    asyncio.run_coroutine_threadsafe(
-                        textUtils.get_emotion(self, content),
-                        self.loop,
-                    )
+                    if (self.features or {}).get("emoji", True):
+                        asyncio.run_coroutine_threadsafe(
+                            textUtils.get_emotion(self, content),
+                            self.loop,
+                        )
                     emotion_flag = False
 
                 if content is not None and len(content) > 0:
@@ -1076,6 +1110,50 @@ class ConnectionHandler:
                     self.logger.bind(tag=TAG).error(
                         f"function call error: {content_arguments}"
                     )
+
+            if not bHasError and len(tool_calls_list) > 0:
+                # 处理 direct_answer 虚拟工具
+                direct_answer_calls = [tc for tc in tool_calls_list if tc["name"] == "direct_answer"]
+                real_tool_calls = [tc for tc in tool_calls_list if tc["name"] != "direct_answer"]
+
+                if direct_answer_calls:
+                    self.logger.bind(tag=TAG).debug(
+                        f"模型选择 direct_answer，流式已播报，写入对话历史"
+                    )
+                    for tc in direct_answer_calls:
+                        da_response = self._extract_direct_answer_response(tc.get("arguments", "{}"))
+                        if da_response:
+                            # 刷新流式缓冲区中未发送的部分
+                            sent_len = tc.get("_da_sent", 0)
+                            remaining = da_response[sent_len:]
+                            if remaining:
+                                remaining = self._clean_response_garbage(remaining)
+                                if remaining:
+                                    self.tts.tts_text_queue.put(
+                                        TTSMessageDTO(
+                                            sentence_id=current_sentence_id,
+                                            sentence_type=SentenceType.MIDDLE,
+                                            content_type=ContentType.TEXT,
+                                            content_detail=remaining,
+                                        )
+                                    )
+                            # 写入对话历史
+                            da_response = self._clean_response_garbage(da_response)
+                            self.tts.store_tts_text(current_sentence_id, da_response)
+                            self.dialogue.put(Message(role="assistant", content=da_response))
+
+                    if not real_tool_calls:
+                        if depth == 0:
+                            self.tts.tts_text_queue.put(
+                                TTSMessageDTO(
+                                    sentence_id=current_sentence_id,
+                                    sentence_type=SentenceType.LAST,
+                                    content_type=ContentType.ACTION,
+                                )
+                            )
+                        return
+
+                    tool_calls_list = real_tool_calls
 
             if not bHasError and len(tool_calls_list) > 0:
                 self.logger.bind(tag=TAG).debug(
@@ -1492,6 +1570,61 @@ class ConnectionHandler:
             self.logger.bind(tag=TAG).error(f"超时检查任务出错: {e}")
         finally:
             self.logger.bind(tag=TAG).info("超时检查任务已退出")
+
+    @staticmethod
+    def _extract_direct_answer_response(arguments_str):
+        """从 direct_answer 的参数中提取 response 值。
+        优先使用 json.loads 标准解析，流式阶段 fallback 到字符串提取。
+        """
+        if not arguments_str:
+            return ""
+        # 优先尝试标准 JSON 解析（适用于完整且格式正确的 JSON）
+        try:
+            data = json.loads(arguments_str)
+            if isinstance(data, dict) and "response" in data:
+                return data["response"]
+        except (json.JSONDecodeError, TypeError):
+            pass
+        # Fallback：流式阶段 JSON 可能不完整，使用字符串提取
+        marker = '"response": "'
+        idx = arguments_str.find(marker)
+        if idx < 0:
+            marker = '"response":"'
+            idx = arguments_str.find(marker)
+        if idx < 0:
+            return ""
+        start = idx + len(marker)
+        raw = arguments_str[start:]
+        # 去掉末尾的 JSON 闭合符号（如果已完整）
+        if raw.endswith('"}'):
+            raw = raw[:-2]
+        elif raw.endswith('"'):
+            raw = raw[:-1]
+        # 处理 JSON 转义
+        raw = raw.replace('\\"', '"').replace('\\n', '\n').replace('\\\\', '\\')
+        return raw
+
+    @staticmethod
+    def _clean_response_garbage(text):
+        """清理 response 中可能泄漏的 JSON 闭合符号。
+        模型有时会在 response 内容中生成 JSON 闭合字符（如 ）"}} 或 '})，
+        这些不是故事内容的一部分，需要去除。
+        """
+        if not text:
+            return text
+        # 清理独立一行的 JSON 闭合垃圾（如 ）"}}  '}}  "}}  }}  } ）
+        _garbage_chars = frozenset('")\'}）')
+        lines = text.split('\n')
+        cleaned = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped and len(stripped) <= 8 and all(c in _garbage_chars for c in stripped):
+                continue
+            cleaned.append(line)
+        result = '\n'.join(cleaned)
+        # 清理末尾残留的 JSON 闭合符号
+        result = re.sub(r'["\'}\]]+$', '', result.rstrip()).rstrip()
+        return result
 
     def _merge_tool_calls(self, tool_calls_list, tools_call):
         """合并工具调用列表
