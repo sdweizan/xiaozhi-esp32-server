@@ -190,6 +190,9 @@ class ConnectionHandler:
         # 初始化提示词管理器
         self.prompt_manager = PromptManager(self.config, self.logger)
 
+        # 初始化通话状态
+        self.calling = False
+
     async def handle_connection(self, ws: websockets.ServerConnection):
         try:
             # 获取运行中的事件循环（必须在异步上下文中）
@@ -534,7 +537,10 @@ class ConnectionHandler:
         # 更新上下文信息
         self.prompt_manager.update_context_info(self, self.client_ip)
         enhanced_prompt = self.prompt_manager.build_enhanced_prompt(
-            self.config["prompt"], self.device_id, self.client_ip
+            self.config["prompt"],
+            self.device_id,
+            self.client_ip,
+            emoji_enabled=(self.features or {}).get("emoji", True),
         )
         if enhanced_prompt:
             self.change_system_prompt(enhanced_prompt)
@@ -952,7 +958,7 @@ class ConnectionHandler:
                 and hasattr(self, "func_handler")
                 and not force_final_answer
         ):
-            functions = self.func_handler.get_functions()
+            functions = list(self.func_handler.get_functions())
             # 仅在第一层调用时注入 direct_answer 虚拟工具
             # 递归调用（depth>0）不注入，避免模型在生成文本回复时再次调 direct_answer 导致循环
             if functions is not None and depth == 0:
