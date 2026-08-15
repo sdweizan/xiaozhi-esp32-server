@@ -286,8 +286,7 @@ Intent:
       # play_music是服务器自带的音乐播放，hass_play_music是通过home assistant控制的独立外部程序音乐播放
       # 如果用了hass_play_music，就不要开启play_music，两者只留一个
       - play_music
-      #- hass_get_state
-      #- hass_set_state
+      #- hass_state
       #- hass_play_music
 
 Memory:
@@ -360,6 +359,9 @@ ASR:
     type: fun_local
     model_dir: models/SenseVoiceSmall
     output_dir: tmp/
+    # 识别语种：auto 自动检测；如需限制只识别中文可设为 zh，避免中文短句误判为韩文等。
+    # SenseVoice 支持 zh、en、ja、ko、yue 等语种标记。
+    language: auto
   FunASRServer:
     # 独立部署FunASR，使用FunASR的API服务，只需要五句话
     # 第一句：mkdir -p ./funasr-runtime-resources/models
@@ -647,7 +649,7 @@ LLM:
     # 定义LLM API类型
     type: openai
     # 可在这里找到你的api key https://platform.deepseek.com/
-    model_name: deepseek-chat
+    model_name: deepseek-v4-flash
     url: https://api.deepseek.com
     api_key: 你的deepseek web key
   ChatGLMLLM:
