@@ -20,6 +20,9 @@ class CacheType(Enum):
     DEVICE_PROMPT = "device_prompt"
     VOICEPRINT_HEALTH = "voiceprint_health"  # 声纹识别健康检查
     AUDIO_DATA = "audio_data"  # 音频数据缓存
+    STORY = "story"  # 故事数据缓存
+    POEM = "poem"    # 古诗词数据缓存
+    MIGU_AUTH = "migu_auth"  # 咪咕音乐授权查询缓存（按 SN）
 
 
 @dataclass
@@ -61,6 +64,15 @@ class CacheConfig:
             ),
             CacheType.AUDIO_DATA: cls(
                 strategy=CacheStrategy.TTL, ttl=600, max_size=100  # 10分钟过期
+            ),
+            CacheType.STORY: cls(
+                strategy=CacheStrategy.TTL, ttl=86400, max_size=500  # 24小时过期
+            ),
+            CacheType.POEM: cls(
+                strategy=CacheStrategy.TTL, ttl=86400, max_size=500  # 24小时过期
+            ),
+            CacheType.MIGU_AUTH: cls(
+                strategy=CacheStrategy.TTL, ttl=300, max_size=1000  # 5分钟过期
             ),
         }
         return configs.get(cache_type, cls())
