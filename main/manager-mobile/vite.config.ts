@@ -116,7 +116,7 @@ export default async ({ command, mode }) => {
       && mode === 'production'
       && visualizer({
         filename: './node_modules/.cache/visualizer/stats.html',
-        open: false,
+        open: true,
         gzipSize: true,
         brotliSize: true,
       }),

@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { ConfigProviderThemeVars } from 'wot-design-uni/components/wd-config-provider/types'
+import type { ConfigProviderThemeVars } from 'wot-design-uni'
 import FgTabbar from './fg-tabbar/fg-tabbar.vue'
 
 const themeVars: ConfigProviderThemeVars = {

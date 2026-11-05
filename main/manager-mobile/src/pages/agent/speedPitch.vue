@@ -17,7 +17,6 @@ defineOptions({
 })
 
 const speedPitchStore = useSpeedPitch()
-const SPEED_PITCH_FIELDS = ['ttsVolume', 'ttsRate', 'ttsPitch'] as const
 
 const localSettings = ref({
   ttsVolume: 0,
@@ -26,10 +25,7 @@ const localSettings = ref({
 })
 
 function handleConfirm() {
-  const changedFields = SPEED_PITCH_FIELDS.filter((field) => {
-    return localSettings.value[field] !== speedPitchStore.speedPitch[field]
-  })
-  speedPitchStore.updateSpeedPitch(localSettings.value, { changedFields })
+  speedPitchStore.updateSpeedPitch(localSettings.value)
   goBack()
 }
 
