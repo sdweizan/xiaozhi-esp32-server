@@ -195,4 +195,4 @@ sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01.tar.bz2
 main/xiaozhi-server/models/SenseVoiceSmall/model.pt.lnk
 
 .workbuddy/
-server/main/xiaozhi-server/CLAUDE.md
+CLAUDE.md
