@@ -102,6 +102,8 @@ class ConnectionHandler:
         self.websocket: websockets.ServerConnection | None = None
         self.headers = None
         self.device_id = None
+        self.sn = None  # 客户端上报的设备 SN（咪咕音乐鉴权用）
+        self.migu_enabled = False  # 客户端是否声明支持咪咕音乐（hello features.migu）
         self.client_ip = None
         self.prompt = None
         self.welcome_msg = None
@@ -1416,6 +1418,13 @@ class ConnectionHandler:
                     self.logger.bind(tag=TAG).error(
                         f"清理工具处理器时出错: {cleanup_error}"
                     )
+
+            # 清理天气 HTTP 会话
+            try:
+                from core.handle.mcp_weather_service import close_weather_session
+                await close_weather_session()
+            except Exception:
+                pass  # 忽略清理错误
 
             # 触发停止事件
             if self.stop_event:
