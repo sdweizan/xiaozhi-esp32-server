@@ -3,6 +3,7 @@ package xiaozhi.modules.agent.entity;
 import java.util.Date;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
@@ -38,4 +39,8 @@ public class AgentTagEntity {
 
     @Schema(description = "删除标记")
     private Integer deleted;
+
+    @TableField(exist = false)
+    @Schema(description = "所属智能体ID（仅批量查询分组用）")
+    private String agentId;
 }

@@ -6,6 +6,18 @@
         SELECT COUNT(*) FROM ai_device WHERE agent_id = #{agentId}
     </select>
 
+    <select id="getDeviceStatsByAgentIds" resultType="xiaozhi.modules.agent.vo.AgentDeviceStatVO">
+        SELECT agent_id AS agentId,
+               COUNT(*) AS deviceCount,
+               MAX(last_connected_at) AS lastConnectedAt
+        FROM ai_device
+        WHERE agent_id IN
+        <foreach collection="agentIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        GROUP BY agent_id
+    </select>
+
     <resultMap id="AgentInfoMap" type="xiaozhi.modules.agent.vo.AgentInfoVO">
         <id column="id"           property="id"/>
         <result column="userId"    property="userId"/>
@@ -84,4 +96,4 @@
         FROM ai_agent a
         WHERE a.id = #{agentId}
     </select>
-</mapper> 
+</mapper>

@@ -246,7 +246,7 @@ databaseChangeLog:
       changes:
         - sqlFile:
             encoding: utf8
-            path: classpath:db/changelog/202507101203.sql            
+            path: classpath:db/changelog/202507101203.sql
   - changeSet:
       id: 202507071130
       author: cgd
@@ -430,14 +430,14 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202511221450.sql
-  - changeSet:         
+  - changeSet:
       id: 202512031517
       author: rainv123
       changes:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202512031517.sql
-    
+
   - changeSet:
       id: 202512041515
       author: cgd
@@ -621,7 +621,7 @@ databaseChangeLog:
             encoding: utf8
             path: classpath:db/changelog/202604201719.sql
   - changeSet:
-      id: 202604211515  
+      id: 202604211515
       author: rainv123
       changes:
         - sqlFile:
@@ -669,3 +669,10 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202605121509.sql
+  - changeSet:
+      id: 202611071530
+      author: jsp
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611071530.sql

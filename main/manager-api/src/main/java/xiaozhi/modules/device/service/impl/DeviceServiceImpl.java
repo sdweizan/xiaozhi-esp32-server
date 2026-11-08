@@ -142,7 +142,8 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         deviceEntity.setMacAddress(macAddress);
         deviceEntity.setUserId(user.getId());
         deviceEntity.setCreator(user.getId());
-        deviceEntity.setAutoUpdate(1);
+        // 新设备默认关闭自动升级：需要升级时由用户在智控台开启开关，或绑定定向固件
+        deviceEntity.setAutoUpdate(0);
         deviceEntity.setCreateDate(currentTime);
         deviceEntity.setUpdater(user.getId());
         deviceEntity.setUpdateDate(currentTime);
@@ -211,10 +212,10 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             firmware.setUrl(Constant.INVALID_FIRMWARE_URL);
             response.setFirmware(firmware);
         } else {
-            // 只有在设备已绑定且autoUpdate不为0的情况下才返回固件升级信息
-            if (deviceById.getAutoUpdate() != 0) {
+            boolean hasOtaBinding = StringUtils.isNotBlank(deviceById.getOtaId());
+            if (hasOtaBinding || deviceById.getAutoUpdate() != 0) {
                 String type = deviceReport.getBoard() == null ? null : deviceReport.getBoard().getType();
-                DeviceReportRespDTO.Firmware firmware = buildFirmwareInfo(type,
+                DeviceReportRespDTO.Firmware firmware = buildFirmwareInfo(deviceById, type,
                         deviceReport.getApplication() == null ? null : deviceReport.getApplication().getVersion());
                 response.setFirmware(firmware);
             }
@@ -454,25 +455,49 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         return code;
     }
 
-    private DeviceReportRespDTO.Firmware buildFirmwareInfo(String type, String currentVersion) {
-        if (StringUtils.isBlank(type)) {
-            return null;
-        }
+    /**
+     * 构建固件升级信息
+     * <p>
+     * 优先使用设备单独绑定的固件（定向 OTA）；未绑定或绑定的固件记录已被删除时，
+     * 回退到原有的「按 board 型号取最新固件」广播逻辑，保证向后兼容。
+     * <p>
+     * 绑定场景跳过「必须比当前版本更高」的限制，以便钉住版本或回退版本；
+     * 但版本相同时不下发下载地址，避免设备反复下载同一固件。
+     */
+    private DeviceReportRespDTO.Firmware buildFirmwareInfo(DeviceEntity device, String type, String currentVersion) {
         if (StringUtils.isBlank(currentVersion)) {
             currentVersion = "0.0.0";
         }
 
-        OtaEntity ota = otaService.getLatestOta(type);
+        // 1. 优先：这台设备单独绑定的固件
+        boolean pinned = false;
+        OtaEntity ota = null;
+        if (device != null && StringUtils.isNotBlank(device.getOtaId())) {
+            ota = otaService.selectById(device.getOtaId());
+            pinned = (ota != null);
+        }
+
+        // 保持原有行为：既没有绑定、设备也没上报型号时无法定位固件
+        if (!pinned && StringUtils.isBlank(type)) {
+            return null;
+        }
+
+        // 2. 兜底：按型号取最新（原有行为）
+        if (ota == null) {
+            ota = otaService.getLatestOta(type);
+        }
+
         DeviceReportRespDTO.Firmware firmware = new DeviceReportRespDTO.Firmware();
         String downloadUrl = null;
 
         if (ota != null) {
-            // 如果设备没有版本信息，或者OTA版本比设备版本新，则返回下载地址
-            if (compareVersions(ota.getVersion(), currentVersion) > 0) {
+            int cmp = compareVersions(ota.getVersion(), currentVersion);
+            // 绑定：版本不一致即下发（可升级也可回退）；兜底：仅更高版本才下发
+            boolean needUpdate = pinned ? (cmp != 0) : (cmp > 0);
+            if (needUpdate) {
                 String otaUrl = sysParamsService.getValue(Constant.SERVER_OTA, true);
                 if (StringUtils.isBlank(otaUrl) || otaUrl.equals("null")) {
                     log.error("OTA地址未配置，请登录智控台，在参数管理找到【server.ota】配置");
-                    // 尝试从请求中获取
                     HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder
                             .getRequestAttributes())
                             .getRequest();
@@ -492,7 +517,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
 
     /**
      * 比较两个版本号
-     * 
+     *
      * @param version1 版本1
      * @param version2 版本2
      * @return 如果version1 > version2返回1，version1 < version2返回-1，相等返回0
@@ -507,8 +532,8 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
 
         int length = Math.max(v1Parts.length, v2Parts.length);
         for (int i = 0; i < length; i++) {
-            int v1 = i < v1Parts.length ? Integer.parseInt(v1Parts[i]) : 0;
-            int v2 = i < v2Parts.length ? Integer.parseInt(v2Parts[i]) : 0;
+            int v1 = i < v1Parts.length ? parseVersionPart(v1Parts[i]) : 0;
+            int v2 = i < v2Parts.length ? parseVersionPart(v2Parts[i]) : 0;
 
             if (v1 > v2) {
                 return 1;
@@ -517,6 +542,15 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             }
         }
         return 0;
+    }
+
+    private static int parseVersionPart(String part) {
+        try {
+            return Integer.parseInt(part.trim());
+        } catch (NumberFormatException e) {
+            // 版本号带后缀(如 1.0.0-beta)时按 0 处理，避免整个 OTA 接口报错
+            return 0;
+        }
     }
 
     @Override
@@ -541,7 +575,8 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         entity.setLastConnectedAt(now);
         entity.setCreator(userId);
         entity.setUpdater(userId);
-        entity.setAutoUpdate(1);
+        // 新设备默认关闭自动升级：需要升级时由用户在智控台开启开关，或绑定定向固件
+        entity.setAutoUpdate(0);
         baseDao.insert(entity);
 
         // 添加：清除智能体设备数量缓存
@@ -558,7 +593,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
 
     /**
      * 生成MQTT密码签名
-     * 
+     *
      * @param content   签名内容 (clientId + '|' + username)
      * @param secretKey 密钥
      * @return Base64编码的HMAC-SHA256签名
@@ -573,7 +608,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
 
     /**
      * 生成WebSocket认证token 遵循Python端AuthManager的实现逻辑：token = signature.timestamp
-     * 
+     *
      * @param clientId 客户端ID
      * @param username 用户名 (通常为deviceId/macAddress)
      * @return 认证token字符串
@@ -607,7 +642,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
 
     /**
      * 构建MQTT配置信息
-     * 
+     *
      * @param macAddress MAC地址
      * @param groupId    分组ID
      * @return MQTT配置对象

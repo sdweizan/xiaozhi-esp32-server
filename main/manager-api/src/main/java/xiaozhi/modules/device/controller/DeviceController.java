@@ -1,5 +1,6 @@
 package xiaozhi.modules.device.controller;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -23,12 +25,16 @@ import xiaozhi.common.redis.RedisUtils;
 import xiaozhi.common.user.UserDetail;
 import xiaozhi.common.utils.Result;
 import xiaozhi.modules.device.dto.DeviceManualAddDTO;
+import xiaozhi.modules.device.dto.DeviceOtaBindDTO;
 import xiaozhi.modules.device.dto.DeviceRegisterDTO;
 import xiaozhi.modules.device.dto.DeviceToolsCallReqDTO;
 import xiaozhi.modules.device.dto.DeviceUnBindDTO;
 import xiaozhi.modules.device.dto.DeviceUpdateDTO;
 import xiaozhi.modules.device.entity.DeviceEntity;
+import xiaozhi.modules.device.entity.OtaEntity;
 import xiaozhi.modules.device.service.DeviceService;
+import xiaozhi.modules.device.service.OtaService;
+import xiaozhi.modules.device.vo.DeviceOtaOptionVO;
 import xiaozhi.modules.security.user.SecurityUser;
 import xiaozhi.modules.sys.service.SysParamsService;
 
@@ -39,11 +45,14 @@ public class DeviceController {
     private final DeviceService deviceService;
     private final RedisUtils redisUtils;
     private final SysParamsService sysParamsService;
+    private final OtaService otaService;
 
-    public DeviceController(DeviceService deviceService, RedisUtils redisUtils, SysParamsService sysParamsService) {
+    public DeviceController(DeviceService deviceService, RedisUtils redisUtils,
+            SysParamsService sysParamsService, OtaService otaService) {
         this.deviceService = deviceService;
         this.redisUtils = redisUtils;
         this.sysParamsService = sysParamsService;
+        this.otaService = otaService;
     }
 
     @PostMapping("/bind/{agentId}/{deviceCode}")
@@ -158,5 +167,48 @@ public class DeviceController {
         Result<Object> response = new Result<Object>();
         response.setMsg("Tools called successfully");
         return response.ok(result);
+    }
+
+    @GetMapping("/ota/options")
+    @Operation(summary = "获取可绑定的固件列表")
+    @RequiresPermissions("sys:role:normal")
+    public Result<List<DeviceOtaOptionVO>> getDeviceOtaOptions() {
+        List<OtaEntity> all = otaService.listAll();
+        List<DeviceOtaOptionVO> options = new ArrayList<>(all.size());
+        for (OtaEntity o : all) {
+            DeviceOtaOptionVO vo = new DeviceOtaOptionVO();
+            vo.setId(o.getId());
+            vo.setFirmwareName(o.getFirmwareName());
+            vo.setType(o.getType());
+            vo.setVersion(o.getVersion());
+            options.add(vo);
+        }
+        return new Result<List<DeviceOtaOptionVO>>().ok(options);
+    }
+
+    @PutMapping("/ota/{id}")
+    @Operation(summary = "设置设备定向固件(传空则恢复按型号自动升级)")
+    @RequiresPermissions("sys:role:normal")
+    public Result<Void> bindDeviceOta(@PathVariable String id, @RequestBody DeviceOtaBindDTO dto) {
+        DeviceEntity entity = deviceService.selectById(id);
+        UserDetail user = SecurityUser.getUser();
+        if (entity == null || !user.getId().equals(entity.getUserId())) {
+            return new Result<Void>().error("设备不存在");
+        }
+
+        String otaId = dto == null ? null : dto.getOtaId();
+        if (StringUtils.isNotBlank(otaId) && otaService.selectById(otaId) == null) {
+            return new Result<Void>().error("固件不存在");
+        }
+
+        if (StringUtils.isBlank(otaId)) {
+            deviceService.update(null, new UpdateWrapper<DeviceEntity>()
+                    .eq("id", id)
+                    .setSql("ota_id = NULL"));
+        } else {
+            entity.setOtaId(otaId);
+            deviceService.updateById(entity);
+        }
+        return new Result<>();
     }
 }

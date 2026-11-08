@@ -46,6 +46,9 @@ public class DeviceEntity {
     @Schema(description = "固件版本号")
     private String appVersion;
 
+    @Schema(description = "定向绑定的固件ID")
+    private String otaId;
+
     @Schema(description = "排序")
     private Integer sort;
 

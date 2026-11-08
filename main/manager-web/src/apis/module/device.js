@@ -105,4 +105,33 @@ export default {
                 });
             }).send();
     },
+    // 获取可绑定的固件列表
+    getOtaOptions(callback) {
+        RequestService.sendRequest()
+            .url(`${getServiceUrl()}/device/ota/options`)
+            .method('GET')
+            .success((res) => {
+                RequestService.clearRequestTime();
+                callback(res);
+            })
+            .networkFail((err) => {
+                console.error('获取可绑定固件列表失败:', err);
+                callback({ data: { code: -1, msg: '获取可绑定固件列表失败' } });
+            }).send();
+    },
+    // 设置设备定向固件(otaId 为空表示清除绑定，恢复按型号自动升级)
+    setDeviceOta(id, otaId, callback) {
+        RequestService.sendRequest()
+            .url(`${getServiceUrl()}/device/ota/${id}`)
+            .method('PUT')
+            .data({ otaId: otaId || null })
+            .success((res) => {
+                RequestService.clearRequestTime();
+                callback(res);
+            })
+            .networkFail((err) => {
+                console.error('设置设备定向固件失败:', err);
+                callback({ data: { code: -1, msg: '设置设备定向固件失败' } });
+            }).send();
+    },
 }

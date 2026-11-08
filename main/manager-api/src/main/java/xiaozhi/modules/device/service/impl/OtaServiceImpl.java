@@ -82,4 +82,11 @@ public class OtaServiceImpl extends BaseServiceImpl<OtaDao, OtaEntity> implement
                 .last("LIMIT 1");
         return baseDao.selectOne(wrapper);
     }
+
+    @Override
+    public List<OtaEntity> listAll() {
+        QueryWrapper<OtaEntity> wrapper = new QueryWrapper<>();
+        wrapper.orderByDesc("update_date");
+        return baseDao.selectList(wrapper);
+    }
 }

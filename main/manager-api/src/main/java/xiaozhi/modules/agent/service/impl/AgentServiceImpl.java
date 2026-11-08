@@ -1,5 +1,8 @@
 package xiaozhi.modules.agent.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -9,16 +12,10 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-
+import lombok.AllArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
-import com.baomidou.mybatisplus.core.metadata.IPage;
-
-import lombok.AllArgsConstructor;
 import xiaozhi.common.constant.Constant;
 import xiaozhi.common.exception.ErrorCode;
 import xiaozhi.common.exception.RenException;
@@ -47,6 +44,7 @@ import xiaozhi.modules.agent.service.AgentPluginMappingService;
 import xiaozhi.modules.agent.service.AgentService;
 import xiaozhi.modules.agent.service.AgentTagService;
 import xiaozhi.modules.agent.service.AgentTemplateService;
+import xiaozhi.modules.agent.vo.AgentDeviceStatVO;
 import xiaozhi.modules.agent.vo.AgentInfoVO;
 import xiaozhi.modules.correctword.service.CorrectWordFileService;
 import xiaozhi.modules.device.entity.DeviceEntity;
@@ -76,6 +74,9 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
     private final AgentContextProviderService agentContextProviderService;
     private final AgentTagService agentTagService;
     private final CorrectWordFileService correctWordFileService;
+
+    /** 批量 IN 查询的单批上限，避免智能体数量过多导致 SQL 过长 */
+    private static final int BATCH_QUERY_SIZE = 500;
 
     @Override
     public PageData<AgentEntity> adminAgentList(Map<String, Object> params) {
@@ -172,46 +173,105 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         }
 
         List<AgentEntity> agentEntities = baseDao.selectList(queryWrapper);
-        return agentEntities.stream().map(this::buildAgentDTO).collect(Collectors.toList());
+        if (agentEntities.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        List<String> agentIds = agentEntities.stream()
+                .map(AgentEntity::getId)
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.toList());
+
+        // 一次性批量取回所有关联数据，避免逐个智能体发起 N 次查询
+        // 1) 设备数量 + 最近连接时间：每条智能体一条统计，无设备的不会出现在结果中
+        Map<String, AgentDeviceStatVO> deviceStats = queryInBatches(agentIds,
+                agentDao::getDeviceStatsByAgentIds).stream()
+                .filter(stat -> StringUtils.isNotBlank(stat.getAgentId()))
+                .collect(Collectors.toMap(AgentDeviceStatVO::getAgentId, Function.identity(), (a, b) -> a));
+
+        // 2) 标签
+        Map<String, List<AgentTagDTO>> tagsByAgent = queryInBatches(agentIds,
+                agentTagDao::selectByAgentIds).stream()
+                .filter(tag -> StringUtils.isNotBlank(tag.getAgentId()))
+                .collect(Collectors.groupingBy(AgentTagEntity::getAgentId,
+                        Collectors.mapping(this::convertTagToDTO, Collectors.toList())));
+
+        // 3) 模型名/音色名
+        Map<String, String> modelNameCache = new HashMap<>();
+        Map<String, String> timbreNameCache = new HashMap<>();
+
+        return agentEntities.stream()
+                .map(agent -> buildAgentDTO(agent, deviceStats, tagsByAgent, modelNameCache, timbreNameCache))
+                .collect(Collectors.toList());
     }
 
     /**
-     * 将AgentEntity转换为AgentDTO
+     * 分批执行 IN 查询，避免 IN 列表过长
      */
-    private AgentDTO buildAgentDTO(AgentEntity agent) {
+    private <T> List<T> queryInBatches(List<String> ids, Function<List<String>, List<T>> query) {
+        List<T> result = new ArrayList<>();
+        if (ids == null || ids.isEmpty()) {
+            return result;
+        }
+        for (int from = 0; from < ids.size(); from += BATCH_QUERY_SIZE) {
+            int to = Math.min(from + BATCH_QUERY_SIZE, ids.size());
+            List<T> batch = query.apply(ids.subList(from, to));
+            if (batch != null) {
+                result.addAll(batch);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 将AgentEntity转换为AgentDTO（关联数据由调用方批量预取后传入）
+     */
+    private AgentDTO buildAgentDTO(AgentEntity agent,
+                                   Map<String, AgentDeviceStatVO> deviceStats,
+                                   Map<String, List<AgentTagDTO>> tagsByAgent,
+                                   Map<String, String> modelNameCache,
+                                   Map<String, String> timbreNameCache) {
         AgentDTO dto = new AgentDTO();
         dto.setId(agent.getId());
         dto.setAgentName(agent.getAgentName());
         dto.setSystemPrompt(agent.getSystemPrompt());
 
-        // 获取 TTS 模型名称
-        dto.setTtsModelName(modelConfigService.getModelNameById(agent.getTtsModelId()));
-
-        // 获取 LLM 模型名称
-        dto.setLlmModelName(modelConfigService.getModelNameById(agent.getLlmModelId()));
-
-        // 获取 VLLM 模型名称
-        dto.setVllmModelName(modelConfigService.getModelNameById(agent.getVllmModelId()));
-
-        // 获取记忆模型名称
+        dto.setTtsModelName(resolveModelName(agent.getTtsModelId(), modelNameCache));
+        dto.setLlmModelName(resolveModelName(agent.getLlmModelId(), modelNameCache));
+        dto.setVllmModelName(resolveModelName(agent.getVllmModelId(), modelNameCache));
         dto.setMemModelId(agent.getMemModelId());
+        dto.setTtsVoiceName(resolveTimbreName(agent.getTtsVoiceId(), timbreNameCache));
 
-        // 获取 TTS 音色名称
-        dto.setTtsVoiceName(timbreModelService.getTimbreNameById(agent.getTtsVoiceId()));
+        AgentDeviceStatVO stat = deviceStats.get(agent.getId());
+        dto.setLastConnectedAt(stat == null ? null : stat.getLastConnectedAt());
+        dto.setDeviceCount(stat == null || stat.getDeviceCount() == null ? 0 : stat.getDeviceCount());
 
-        // 获取智能体最近的最后连接时长
-        dto.setLastConnectedAt(deviceService.getLatestLastConnectionTime(agent.getId()));
-
-        // 获取设备数量
-        dto.setDeviceCount(getDeviceCountByAgentId(agent.getId()));
-
-        // 获取标签列表
-        List<AgentTagEntity> tags = agentTagDao.selectByAgentId(agent.getId());
+        List<AgentTagDTO> tags = tagsByAgent.get(agent.getId());
         if (ToolUtil.isNotEmpty(tags)) {
-            dto.setTags(tags.stream().map(this::convertTagToDTO).collect(Collectors.toList()));
+            dto.setTags(tags);
         }
 
         return dto;
+    }
+
+    private String resolveModelName(String modelId, Map<String, String> cache) {
+        if (StringUtils.isBlank(modelId)) {
+            return null;
+        }
+        if (!cache.containsKey(modelId)) {
+            cache.put(modelId, modelConfigService.getModelNameById(modelId));
+        }
+        return cache.get(modelId);
+    }
+
+    private String resolveTimbreName(String voiceId, Map<String, String> cache) {
+        if (StringUtils.isBlank(voiceId)) {
+            return null;
+        }
+        if (!cache.containsKey(voiceId)) {
+            cache.put(voiceId, timbreModelService.getTimbreNameById(voiceId));
+        }
+        return cache.get(voiceId);
     }
 
     private AgentTagDTO convertTagToDTO(AgentTagEntity entity) {
@@ -439,7 +499,7 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
 
     /**
      * 验证大语言模型和意图识别的参数是否符合匹配
-     * 
+     *
      * @param llmModelId    大语言模型id
      * @param intentModelId 意图识别id
      * @return T 匹配 : F 不匹配

@@ -1,5 +1,6 @@
 package xiaozhi.modules.device.service;
 
+import java.util.List;
 import java.util.Map;
 
 import xiaozhi.common.page.PageData;
@@ -19,4 +20,9 @@ public interface OtaService extends BaseService<OtaEntity> {
     void delete(String[] ids);
 
     OtaEntity getLatestOta(String type);
+
+    /**
+     * 列出全部固件，供设备端选择定向绑定的固件
+     */
+    List<OtaEntity> listAll();
 }

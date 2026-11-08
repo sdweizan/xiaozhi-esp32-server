@@ -59,6 +59,18 @@
                     @change="handleOtaSwitchChange(scope.row)"></el-switch>
                 </template>
               </el-table-column>
+              <el-table-column :label="$t('device.otaBinding')" align="center" min-width="180">
+                <template slot-scope="scope">
+                  <el-select v-model="scope.row.otaId" size="mini" clearable
+                    :placeholder="$t('device.otaBindingAuto')"
+                    @change="handleOtaBindingChange(scope.row)">
+                    <el-option :label="$t('device.otaBindingAuto')" value=""></el-option>
+                    <el-option v-for="item in otaOptions" :key="item.id"
+                      :label="`${item.firmwareName || item.type} (${item.version})`" :value="item.id">
+                    </el-option>
+                  </el-select>
+                </template>
+              </el-table-column>
               <el-table-column :label="$t('device.operation')" align="center">
                 <template slot-scope="scope">
                   <el-button size="mini" type="text" @click="handleUnbind(scope.row.device_id)">
@@ -154,6 +166,7 @@ export default {
       loading: false,
       userApi: null,
       firmwareTypes: [],
+      otaOptions: [],
       mqttServiceAvailable: false, // MQTT服务是否可用
     };
   },
@@ -204,6 +217,7 @@ export default {
   },
   created() {
     this.getFirmwareTypes()
+    this.getOtaOptions()
   },
   methods: {
     async getFirmwareTypes() {
@@ -379,6 +393,7 @@ export default {
               isEdit: false,
               _submitting: false,
               otaSwitch: device.autoUpdate === 1,
+              otaId: device.otaId || '',
               rawBindTime: new Date(device.createDate).getTime(),
               selected: false,
               // 初始设置为离线状态
@@ -482,6 +497,25 @@ export default {
         }
         row.otaSwitch = !row.otaSwitch
         this.$message.error(msg || this.$t('message.error'))
+      })
+    },
+    getOtaOptions() {
+      Api.device.getOtaOptions(({ data }) => {
+        if (data && data.code === 0) {
+          this.otaOptions = data.data || []
+        }
+      })
+    },
+    handleOtaBindingChange(row) {
+      const otaId = row.otaId || null
+      Api.device.setDeviceOta(row.device_id, otaId, ({ data }) => {
+        if (data && data.code === 0) {
+          this.$message.success(otaId ? this.$t('device.otaBindingSet') : this.$t('device.otaBindingCleared'))
+          return
+        }
+        // 失败时重新拉取列表，把界面回滚到服务端真实状态
+        this.$message.error((data && data.msg) || this.$t('message.error'))
+        this.fetchBindDevices(this.currentAgentId)
       })
     },
     // 判断是否可以生成表情、主题、字体bin文件
