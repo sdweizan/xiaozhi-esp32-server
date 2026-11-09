@@ -23,9 +23,11 @@ class TTSProvider(TTSProviderBase):
 
     def __init__(self, config, delete_audio_file):
         super().__init__(config, delete_audio_file)
-        self.url = config.get("url", "ws://192.168.1.10:8092/paddlespeech/tts/streaming")
+        self.url = config.get("url", "ws://127.0.0.1:8092/paddlespeech/tts/streaming")
         self.protocol = config.get("protocol", "websocket")
-        
+        if self.protocol != "websocket":
+            raise ValueError("Unsupported protocol. Please use 'websocket'.")
+
         if config.get("private_voice"):
             self.spk_id = int(config.get("private_voice"))
         else:
@@ -82,7 +84,7 @@ class TTSProvider(TTSProviderBase):
         if self.protocol == "websocket":
             return await self.text_streaming(text, output_file)
         else:
-            raise ValueError("Unsupported protocol. Please use 'websocket' or 'http'.")
+            raise ValueError("Unsupported protocol. Please use 'websocket'.")
 
     async def text_streaming(self, text, output_file):
         try:
@@ -111,7 +113,7 @@ class TTSProvider(TTSProviderBase):
                 await ws.send(json.dumps(data_request))
 
                 audio_chunks = b""
-                timeout_seconds = 60  # 设置超时
+                timeout_seconds = self.tts_timeout
                 try:
                     while True:
                         response = await asyncio.wait_for(ws.recv(), timeout=timeout_seconds)

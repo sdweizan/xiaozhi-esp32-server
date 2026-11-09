@@ -4,6 +4,9 @@
 """
 
 import os
+import asyncio
+import hashlib
+import threading
 from typing import Dict, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -118,8 +121,9 @@ class PromptManager:
 
         # 使用传入的提示词并缓存（如果有设备ID）
         if device_id:
-            device_cache_key = f"device_prompt:{device_id}"
-            self.cache_manager.set(self.CacheType.DEVICE_PROMPT, device_cache_key, user_prompt)
+            self.cache_manager.set(
+                self.CacheType.DEVICE_PROMPT, device_cache_key, user_prompt
+            )
             self.logger.bind(tag=TAG).debug(f"设备 {device_id} 的提示词已缓存")
 
         self.logger.bind(tag=TAG).info(f"使用快速提示词: {user_prompt[:50]}...")
@@ -169,12 +173,33 @@ class PromptManager:
             if cached_weather is not None:
                 return cached_weather
 
-            # 缓存未命中，调用get_weather函数获取
+            # 缓存未命中，调用 async get_weather 函数
+            # Windows ProactorEventLoop 不支持 run_coroutine_threadsafe().result()
+            # 因此用 call_soon_threadsafe 提交任务 + threading.Event 等待结果
+            # 注意：Event.wait() 只阻塞当前线程池线程，不阻塞主事件循环
             from plugins_func.functions.get_weather import get_weather
             from plugins_func.register import ActionResponse
 
-            # 调用get_weather函数
-            result = get_weather(conn, location=location, lang="zh_CN")
+            result_holder = []
+            exception_holder = []
+
+            async def _call():
+                try:
+                    result_holder.append(
+                        await get_weather(conn, location=location, lang="zh_CN")
+                    )
+                except Exception as e:
+                    exception_holder.append(e)
+                finally:
+                    event.set()
+
+            event = threading.Event()
+            conn.loop.call_soon_threadsafe(lambda: asyncio.ensure_future(_call()))
+            if not event.wait(timeout=10):
+                raise TimeoutError("获取天气信息超时")
+            if exception_holder:
+                raise exception_holder[0]
+            result = result_holder[0]
             if isinstance(result, ActionResponse):
                 weather_report = result.result
                 self.cache_manager.set(self.CacheType.WEATHER, location, weather_report)
@@ -231,6 +256,18 @@ class PromptManager:
         if not self.base_prompt_template:
             return user_prompt
 
+        # 缓存键须覆盖所有渲染输入：emoji 开关、设备 prompt 变更否则会命中过期提示词
+        emoji_enabled = kwargs.get("emoji_enabled", True)
+        prompt_hash = hashlib.md5(user_prompt.encode("utf-8")).hexdigest()[:8]
+        enhanced_cache_key = (
+            f"enhanced_prompt:{device_id}:{emoji_enabled}:{prompt_hash}"
+        )
+        cached_prompt = self.cache_manager.get(
+            self.CacheType.DEVICE_PROMPT, enhanced_cache_key
+        )
+        if cached_prompt is not None:
+            return cached_prompt
+
         try:
             # 获取最新的时间信息（不缓存）
             today_date, today_weekday, lunar_date = self._get_current_time_info()
@@ -279,11 +316,13 @@ class PromptManager:
                 *args,
                 **kwargs,
             )
-            device_cache_key = f"device_prompt:{device_id}"
             self.cache_manager.set(
-                self.CacheType.DEVICE_PROMPT, device_cache_key, enhanced_prompt
+                self.CacheType.DEVICE_PROMPT,
+                enhanced_cache_key,
+                enhanced_prompt,
+                ttl=300,
             )
-            self.logger.bind(tag=TAG).info(
+            self.logger.bind(tag=TAG).debug(
                 f"构建增强提示词成功，长度: {len(enhanced_prompt)}"
             )
             return enhanced_prompt

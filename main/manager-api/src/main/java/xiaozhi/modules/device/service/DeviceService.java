@@ -31,6 +31,11 @@ public interface DeviceService extends BaseService<DeviceEntity> {
     List<DeviceEntity> getUserDevices(Long userId, String agentId);
 
     /**
+     * 获取用户指定智能体的设备列表（带时区处理），
+     */
+    List<UserShowDeviceListVO> getUserDeviceList(Long userId, String agentId);
+
+    /**
      * 解绑设备
      */
     void unbindDevice(Long userId, String deviceId);
@@ -77,6 +82,16 @@ public interface DeviceService extends BaseService<DeviceEntity> {
      * @return 设备信息
      */
     DeviceEntity getDeviceByMacAddress(String macAddress);
+
+    /**
+     * 根据MAC地址获取当前登录用户名下的设备信息
+     * <p>
+     * 设备不存在或不属于当前用户时返回null，调用方无需再自行比对归属。
+     *
+     * @param macAddress MAC地址
+     * @return 当前用户名下的设备信息，不存在或无权限时返回null
+     */
+    DeviceEntity getOwnedDeviceByMacAddress(String macAddress);
 
     /**
      * 根据设备ID获取激活码
@@ -133,4 +148,4 @@ public interface DeviceService extends BaseService<DeviceEntity> {
      */
     Object callDeviceTool(String deviceId, String toolName, Map<String, Object> arguments);
 
-}
+    }
