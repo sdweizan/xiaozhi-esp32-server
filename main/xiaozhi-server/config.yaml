@@ -136,9 +136,13 @@ plugins:
   # 申请地址：https://console.qweather.com/#/apps/create-key/over
   # 申请后通过这个链接可以找到自己的apihost：https://console.qweather.com/setting?lang=zh
   get_weather:
-    api_host: "mj7p3y7naa.re.qweatherapi.com"
-    api_key: "a861d0d5e7bf4ee1a83d9a9e4f96d4da"
+    api_host: "pp7jpjugqp.re.qweatherapi.com"
+    api_key: "4907747499e24f678a9ba3feac04e5b5"
     default_location: "广州"
+  # 故事分类与内容插件配置
+  # 申请地址：https://market.aliyun.com/detail/cmapi00043205
+  get_story:
+    appcode: "b97cce451f5a46b2acdc0ccbdc744b31"
   # 获取新闻插件的配置，这里根据需要的新闻类型传入对应的url链接，默认支持社会、科技、财经新闻
   # 更多类型的新闻列表查看 https://www.chinanews.com.cn/rss/
   get_news_from_chinanews:
@@ -162,6 +166,30 @@ plugins:
       - ".wav"
       - ".p3"
     refresh_time: 300 # 刷新音乐列表的时间间隔，单位为秒
+    # 曲库中找不到用户点播的歌曲时的提示语，随后会随机播放一首本地音乐
+    # 占位符：{song}=用户点播的歌名，{played}=实际播放的歌名
+    not_found_prompt: "版权音乐无法播放，为您播放《{played}》"
+    # 曲库为空（或音乐目录不存在）时的提示语
+    empty_library_text: "版权音乐无法播放，本地曲库暂时没有可播放的歌曲。"
+  # 咪咕音乐鉴权配置（厂商根据设备 SN 查询咪咕授权信息）
+  # 收到"播放xxx音乐/歌曲"时，先调用咪咕接口判断该设备是否已授权：
+  #   已授权 → 下发 歌曲关键词 + 手机号（密文）给客户端，由客户端咪咕 SDK 完成搜索与播放
+  #   未授权 → 播报未授权提示
+  # 仅对在 hello 中声明 features.migu 且上报了 sn 的设备生效
+  migu_music:
+    enable: true                   # 总开关，默认关闭；关闭时行为与原来完全一致（联调期已打开）
+    base_url: "https://a2link.komect.com"
+    path: "/lx-device-manager/cloud/json/miniprogram/migu/auth/queryBySn"
+    client_id: "7ed737ca335746af956924b64ad25e69"      # 璇玑颁发的 clientId
+    client_secret: "50a4686d49da4a99aa751d8a96109136"  # 璇玑颁发的 clientSecret
+    product_code: "TEST"           # 产品编码，对接期固定传 TEST，正式编码下发后替换
+    timeout: 8                     # 鉴权接口超时时间（秒）
+    cache_ttl: 300                 # 按 SN 缓存鉴权结果的秒数，0 表示不缓存
+    require_client_feature: true   # 是否要求客户端在 hello 中声明 features.migu
+    fallback_to_local: false       # 鉴权接口异常时是否回退本地音乐播放（联调期关闭，便于暴露问题）
+    speak_text_on_authorized: ""   # 已授权时服务端播报文案，留空则不播报（由客户端播放音乐）
+    speak_text_on_unauthorized: "该设备尚未授权咪咕音乐，请先在手机App中绑定手机号后再试。"
+    speak_text_on_error: "音乐服务暂时不可用，请稍后再试。"
   search_from_ragflow:
     # 知识库的描述信息，方便大语言模型知道什么时候调用
     description: "当用户问xxx时，调用本方法，使用知识库中的信息回答问题"
@@ -171,6 +199,19 @@ plugins:
     api_key: "ragflow-xxx"
     # ragflow知识库id
     dataset_ids: ["123456789"]
+  # 联网搜索插件配置
+  # 支持秘塔(metaso)和Tavily两个搜索源
+  # 秘塔API Key申请：https://metaso.cn/search-api/api-keys
+  # Tavily API Key申请：https://app.tavily.com/home
+  web_search:
+    # 搜索源：metaso / tavily
+    provider: "metaso"
+    # 工具描述，用于告知LLM何时调用此工具，可根据需要自定义
+    description: "联网搜索工具。当用户明确需要联网搜索问题时使用此工具。"
+    # 返回结果数量（默认5）
+    max_results: 5
+    # 秘塔API Key（mk-前缀） / Tavily API Key（tvly-前缀）
+    api_key: "mk-xxx"
 # 声纹识别配置
 voiceprint:
   # 声纹接口地址
@@ -253,6 +294,7 @@ Intent:
     # 系统默认已经记载"handle_exit_intent(退出识别)"、"play_music(音乐播放)"插件，请勿重复加载
     # 下面是加载查天气、角色切换、加载查新闻的插件示例
     functions:
+      - web_search
       - get_weather
       - get_news_from_newsnow
       - play_music
@@ -264,6 +306,7 @@ Intent:
     # 下面是加载查天气、角色切换、加载查新闻的插件示例
     functions:
       - change_role
+      - web_search                  # 联网搜索
       - get_weather
       # - search_from_ragflow
       # - get_news_from_chinanews
@@ -396,7 +439,28 @@ ASR:
     type: doubao_stream
     appid: 你的火山引擎语音合成服务appid
     access_token: 你的火山引擎语音合成服务access_token
-    cluster: volcengine_input_common
+    # 资源ID：小时版 volc.bigasr.sauc.duration，并发版 volc.bigasr.sauc.concurrent
+    resource_id: volc.bigasr.sauc.duration
+    # 热词、替换词使用流程：https://www.volcengine.com/docs/6561/155738
+    boosting_table_name: （选填）你的热词文件名称
+    correct_table_name: （选填）你的替换词文件名称
+    # 是否开启多语种识别模式
+    enable_multilingual: False
+    # 多语种识别当该键为空时，该模型支持中英文、上海话、闽南语，四川、陕西、粤语识别。当将其设置为特定键时，它可以识别指定语言。
+    # 详细语言列表参考 https://www.volcengine.com/docs/6561/1354869
+    # language: zh-cn
+    # 静音判定时长(ms)，默认200ms
+    end_window_size: 200
+    output_dir: tmp/
+  DoubaoStreamASRV2:
+    # 豆包语音识别模型2.0（基于火山引擎seed-asr）
+    # 开通地址：https://console.volcengine.com/speech/service/10038
+    # 价格更为便宜，建议在高并发场景下使用
+    type: doubao_stream
+    appid: 你的火山引擎语音合成服务appid
+    access_token: 你的火山引擎语音合成服务access_token
+    # 资源ID：小时版 volc.seedasr.sauc.duration，并发版 volc.seedasr.sauc.concurrent
+    resource_id: volc.seedasr.sauc.duration
     # 热词、替换词使用流程：https://www.volcengine.com/docs/6561/155738
     boosting_table_name: （选填）你的热词文件名称
     correct_table_name: （选填）你的替换词文件名称
@@ -796,6 +860,31 @@ TTS:
     #     - source_speaker: zh_male_ahu_conversation_wvae_bigtts
     #       mix_factor: 0.4
     # language: "中文"  # 指定输出语种,如:中文、英语、日语、韩语等,请根据所选音色支持的语言进行设置,不填则默认为中文
+  #豆包语音合成模型2.0，支持双向流式tts（基于seed-tts-2.0资源）
+  HuoshanDoubleStreamTTSV2:
+    type: huoshan_double_stream
+    # 访问 https://console.volcengine.com/speech/service/10035 开通语音合成大模型，购买音色
+    # 在页面底部获取appid和access_token
+    # 资源ID固定为：seed-tts-2.0（豆包语音合成模型2.0）
+    # 如果是机智云，把接口地址换成wss://bytedance.gizwitsapi.com/api/v3/tts/bidirection
+    # 机智云不需要天填 appid
+    ws_url: wss://openspeech.bytedance.com/api/v3/tts/bidirection
+    appid: 你的火山引擎语音合成服务appid
+    access_token: 你的火山引擎语音合成服务access_token
+    resource_id: seed-tts-2.0
+    speaker: zh_female_xiaohe_uranus_bigtts
+    # 开启WebSocket连接复用，默认复用（注意：复用后设备处于聆听状态时空闲链接会占并发数）
+    enable_ws_reuse: True
+    # 相关参数文档：https://www.volcengine.com/docs/6561/1329505
+    # 音频输出配置（audio_params）- 用户可自定义添加火山引擎支持的任何音频参数
+    audio_params:
+      speech_rate: 0  # 语速(-50~100)
+      loudness_rate: 0  # 音量(-50~100)
+    # 高级文本处理配置（additions）- 用户可自定义添加火山引擎支持的任何高级参数
+    additions:
+      post_process:
+        pitch: 0  # 音高(-12~12)
+    # language: "中文"  # 指定输出语种,如:中文、英语、日语、韩语等,请根据所选音色支持的语言进行设置,不填则默认为中文
   CosyVoiceSiliconflow:
     type: siliconflow
     # 硅基流动TTS
@@ -1007,36 +1096,6 @@ TTS:
     output_dir: tmp/
     access_token: "你的302API密钥"
     # language: "中文"  # 指定输出语种,如:中文、英语、日语、韩语等,请根据所选音色支持的语言进行设置,不填则默认为中文
-  GizwitsTTS:
-    type: doubao
-    # 火山引擎作为基座，可以完全使用企业级火山引擎语音合成服务
-    # 前一万名注册的用户，将送5元体验金额
-    # 获取API Key地址：https://agentrouter.gizwitsapi.com/panel/token
-    api_url: https://bytedance.gizwitsapi.com/api/v1/tts
-    authorization: "Bearer "
-    # 湾湾小何音色
-    voice: "zh_female_wanwanxiaohe_moon_bigtts"
-    output_dir: tmp/
-    access_token: "你的机智云API key"
-    # language: "中文"  # 指定输出语种,如:中文、英语、日语、韩语等,请根据所选音色支持的语言进行设置,不填则默认为中文
-  ACGNTTS:
-    #在线网址：https://acgn.ttson.cn/
-    #token购买：www.ttson.cn
-    #开发相关疑问请提交至网站上的qq
-    #角色id获取地址：ctrl+f快速检索角色——网站管理者不允许发布,可询问网站管理者
-    #各参数意义见开发文档：https://www.yuque.com/alexuh/skmti9/wm6taqislegb02gd?singleDoc#
-    type: ttson
-    token: your_token
-    voice_id: 1695
-    speed_factor: 1
-    pitch_factor: 0
-    volume_change_dB: 0
-    to_lang: ZH
-    url: https://u95167-bd74-2aef8085.westx.seetacloud.com:8443/flashsummary/tts?token=
-    format: mp3
-    output_dir: tmp/
-    emotion: 1
-    # language: "中文"  # 指定输出语种,如:中文、英语、日语、韩语等,请根据所选音色支持的语言进行设置,不填则默认为中文
   OpenAITTS:
     # openai官方文本转语音服务，可支持全球大多数语种
     type: openai
@@ -1074,18 +1133,6 @@ TTS:
     headers: # 自定义请求头
       # Authorization: Bearer xxxx
     format: mp3 # 接口返回的音频格式
-    output_dir: tmp/
-    # language: "中文"  # 指定输出语种,如:中文、英语、日语、韩语等,请根据所选音色支持的语言进行设置,不填则默认为中文
-  LinkeraiTTS:
-    type: linkerai
-    api_url: https://tts.linkerai.cn/tts
-    audio_format: "pcm"
-    # 默认的access_token供大家测试时免费使用的，此access_token请勿用于商业用途
-    # 如果效果不错，可自行申请token，申请地址：https://linkerai.cn
-    # 各参数意义见开发文档：https://tts.linkerai.cn/docs
-    # 支持声音克隆，可自行上传音频，填入voice参数，voice参数为空时，使用默认声音
-    access_token: "U4YdYXVfpwWnk2t5Gp822zWPCuORyeJL"
-    voice: "OUeAo1mhq6IBExi"
     output_dir: tmp/
     # language: "中文"  # 指定输出语种,如:中文、英语、日语、韩语等,请根据所选音色支持的语言进行设置,不填则默认为中文
   PaddleSpeechTTS:
