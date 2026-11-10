@@ -224,6 +224,7 @@ class PromptManager:
             ):
                 # 获取位置信息（使用全局缓存）
                 local_address = self._get_location_info(client_ip)
+                self.logger.bind(tag=TAG).info(f"终端当前IP地址：{client_ip}，定位位置为：{local_address}")
 
             if (
                 self.base_prompt_template

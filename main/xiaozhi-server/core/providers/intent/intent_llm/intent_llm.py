@@ -203,11 +203,11 @@ class IntentProvider(IntentProviderBase):
 
         # 记录预处理完成时间
         preprocess_time = time.time() - total_start_time
-        logger.bind(tag=TAG).debug(f"意图识别预处理耗时: {preprocess_time:.4f}秒")
+        logger.bind(tag=TAG).info(f"意图识别预处理耗时: {preprocess_time:.4f}秒")
 
         # 使用LLM进行意图识别
         llm_start_time = time.time()
-        logger.bind(tag=TAG).debug(f"开始LLM意图识别调用, 模型: {model_info}")
+        logger.bind(tag=TAG).info(f"开始LLM意图识别调用, 模型: {model_info}")
 
         try:
             # 使用 to_thread 将同步阻塞调用放到线程池中，避免阻塞事件循环
@@ -222,7 +222,7 @@ class IntentProvider(IntentProviderBase):
 
         # 记录LLM调用完成时间
         llm_time = time.time() - llm_start_time
-        logger.bind(tag=TAG).debug(
+        logger.bind(tag=TAG).info(
             f"外挂的大模型意图识别完成, 模型: {model_info}, 调用耗时: {llm_time:.4f}秒"
         )
 
@@ -238,7 +238,7 @@ class IntentProvider(IntentProviderBase):
 
         # 记录总处理时间
         total_time = time.time() - total_start_time
-        logger.bind(tag=TAG).debug(
+        logger.bind(tag=TAG).info(
             f"【意图识别性能】模型: {model_info}, 总耗时: {total_time:.4f}秒, LLM调用: {llm_time:.4f}秒, 查询: '{text[:20]}...'"
         )
 

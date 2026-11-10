@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
     <!-- 定义日志文件存储位置 -->
-    <property name="LOG_HOME" value="./logs" />
-
+    <property name="LOG_HOME" value="${LOG_HOME:-./logs}" />
+    
     <!-- 引入Spring Boot默认配置 -->
     <include resource="org/springframework/boot/logging/logback/defaults.xml" />
     
@@ -73,7 +73,7 @@
     </springProfile>
     
     <!-- 生产环境配置 - 合并两个版本的最佳实践 -->
-    <springProfile name="prod">
+    <springProfile name="prd">
         <!-- 使用本地日志路径 -->
         <appender name="PROD_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
             <file>${LOG_HOME}/xiaozhi-esp32-api.log</file>
