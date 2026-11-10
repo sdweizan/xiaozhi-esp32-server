@@ -32,6 +32,7 @@ import xiaozhi.common.utils.ConvertUtils;
 import xiaozhi.common.utils.JsonUtils;
 import xiaozhi.modules.agent.dao.AgentDao;
 import xiaozhi.modules.agent.dao.AgentTagDao;
+import xiaozhi.modules.agent.dao.AgentTagRelationDao;
 import xiaozhi.modules.agent.dto.AgentCreateDTO;
 import xiaozhi.modules.agent.dto.AgentDTO;
 import xiaozhi.modules.agent.dto.AgentMemoryDTO;
@@ -41,6 +42,7 @@ import xiaozhi.modules.agent.entity.AgentContextProviderEntity;
 import xiaozhi.modules.agent.entity.AgentEntity;
 import xiaozhi.modules.agent.entity.AgentPluginMapping;
 import xiaozhi.modules.agent.entity.AgentTagEntity;
+import xiaozhi.modules.agent.entity.AgentTagRelationEntity;
 import xiaozhi.modules.agent.entity.AgentTemplateEntity;
 import xiaozhi.modules.agent.service.AgentChatHistoryService;
 import xiaozhi.modules.agent.service.AgentContextProviderService;
@@ -53,6 +55,7 @@ import xiaozhi.modules.agent.vo.AgentInfoVO;
 import xiaozhi.modules.correctword.service.CorrectWordFileService;
 import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.device.service.DeviceService;
+import xiaozhi.modules.model.dao.ModelConfigDao;
 import xiaozhi.modules.model.dto.ModelProviderDTO;
 import xiaozhi.modules.model.dto.VoiceDTO;
 import xiaozhi.modules.model.entity.ModelConfigEntity;
@@ -60,6 +63,8 @@ import xiaozhi.modules.model.service.ModelConfigService;
 import xiaozhi.modules.model.service.ModelProviderService;
 import xiaozhi.modules.security.user.SecurityUser;
 import xiaozhi.modules.sys.enums.SuperAdminEnum;
+import xiaozhi.modules.timbre.dao.TimbreDao;
+import xiaozhi.modules.timbre.entity.TimbreEntity;
 import xiaozhi.modules.timbre.service.TimbreService;
 
 @Service
@@ -67,6 +72,9 @@ import xiaozhi.modules.timbre.service.TimbreService;
 public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> implements AgentService {
     private final AgentDao agentDao;
     private final AgentTagDao agentTagDao;
+    private final AgentTagRelationDao agentTagRelationDao;
+    private final ModelConfigDao modelConfigDao;
+    private final TimbreDao timbreDao;
     private final TimbreService timbreModelService;
     private final ModelConfigService modelConfigService;
     private final RedisUtils redisUtils;
@@ -256,41 +264,56 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         }
 
         List<AgentEntity> agentEntities = baseDao.selectList(queryWrapper);
-        return agentEntities.stream().map(this::buildAgentDTO).collect(Collectors.toList());
+        List<ModelConfigEntity> modelConfigEntities = modelConfigDao.selectList(new QueryWrapper<>());
+        List<TimbreEntity> timbreEntities = timbreDao.selectList(new QueryWrapper<>());
+        List<AgentTagEntity> agentTagEntities = agentTagDao.selectList(new QueryWrapper<>());
+        List<AgentTagRelationEntity> agentTagRelationEntities = agentTagRelationDao.selectList(new QueryWrapper<>());
+        return agentEntities.stream().map(item -> this.buildAgentDTO(item, modelConfigEntities, timbreEntities, agentTagEntities, agentTagRelationEntities)).collect(Collectors.toList());
     }
 
     /**
      * 将AgentEntity转换为AgentDTO
      */
-    private AgentDTO buildAgentDTO(AgentEntity agent) {
+    private AgentDTO buildAgentDTO(AgentEntity agent,
+        List<ModelConfigEntity> modelConfigEntities,
+        List<TimbreEntity> timbreEntities,
+        List<AgentTagEntity> agentTagEntities,
+        List<AgentTagRelationEntity> agentTagRelationEntities
+    ) {
         AgentDTO dto = new AgentDTO();
         dto.setId(agent.getId());
         dto.setAgentName(agent.getAgentName());
         dto.setSystemPrompt(agent.getSystemPrompt());
 
         // 获取 TTS 模型名称
-        dto.setTtsModelName(modelConfigService.getModelNameById(agent.getTtsModelId()));
+        // dto.setTtsModelName(modelConfigService.getModelNameById(agent.getTtsModelId()));
+        dto.setTtsModelName(modelConfigEntities.stream().filter(item -> item.getId().equals(agent.getTtsModelId())).findAny().orElse(new ModelConfigEntity()).getModelName());
 
         // 获取 LLM 模型名称
-        dto.setLlmModelName(modelConfigService.getModelNameById(agent.getLlmModelId()));
+        // dto.setLlmModelName(modelConfigService.getModelNameById(agent.getLlmModelId()));
+        dto.setLlmModelName(modelConfigEntities.stream().filter(item -> item.getId().equals(agent.getLlmModelId())).findAny().orElse(new ModelConfigEntity()).getModelName());
 
         // 获取 VLLM 模型名称
-        dto.setVllmModelName(modelConfigService.getModelNameById(agent.getVllmModelId()));
+        // dto.setVllmModelName(modelConfigService.getModelNameById(agent.getVllmModelId()));
+        dto.setVllmModelName(modelConfigEntities.stream().filter(item -> item.getId().equals(agent.getVllmModelId())).findAny().orElse(new ModelConfigEntity()).getModelName());
 
         // 获取记忆模型名称
         dto.setMemModelId(agent.getMemModelId());
 
         // 获取 TTS 音色名称
-        dto.setTtsVoiceName(timbreModelService.getTimbreNameById(agent.getTtsVoiceId()));
+        // dto.setTtsVoiceName(timbreModelService.getTimbreNameById(agent.getTtsVoiceId()));
+        dto.setTtsVoiceName(timbreEntities.stream().filter(item -> item.getId().equals(agent.getTtsVoiceId())).findAny().orElse(new TimbreEntity()).getName());
 
         // 获取智能体最近的最后连接时长
-        dto.setLastConnectedAt(deviceService.getLatestLastConnectionTime(agent.getId()));
+        // dto.setLastConnectedAt(deviceService.getLatestLastConnectionTime(agent.getId()));
 
         // 获取设备数量
-        dto.setDeviceCount(getDeviceCountByAgentId(agent.getId()));
+        // dto.setDeviceCount(getDeviceCountByAgentId(agent.getId()));
 
         // 获取标签列表
-        List<AgentTagEntity> tags = agentTagDao.selectByAgentId(agent.getId());
+        // List<AgentTagEntity> tags = agentTagDao.selectByAgentId(agent.getId());
+        List<String> agentTags = agentTagRelationEntities.stream().filter(item -> item.getAgentId().equals(agent.getId())).map(item -> item.getTagId()).toList();
+        List<AgentTagEntity> tags = agentTagEntities.stream().filter(item -> agentTags.contains(item.getId())).toList();
         if (CollUtil.isNotEmpty(tags)) {
             dto.setTags(tags.stream().map(this::convertTagToDTO).collect(Collectors.toList()));
         }
