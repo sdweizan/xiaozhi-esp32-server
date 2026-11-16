@@ -78,13 +78,22 @@ class DeviceTypeRegistry:
 
 # 初始化函数注册字典
 all_function_registry = {}
+# 模块名 -> 函数名列表的映射，用于将模块级别的插件名展开为具体的函数名
+module_func_map = {}
 
 
 def register_function(name, desc, type=None):
-    """注册函数到函数注册字典的装饰器"""
+    """注册函数到函数注册字典的装饰器
+
+    同步函数在工作线程中执行，函数体内不可调用 asyncio 事件循环 API；
+    需要异步（httpx、await）请定义为 async def。
+    """
 
     def decorator(func):
         all_function_registry[name] = FunctionItem(name, desc, func, type)
+        # 记录模块名到函数名的映射，用于 expand 模块级别的插件配置
+        module_name = func.__module__.split(".")[-1]
+        module_func_map.setdefault(module_name, []).append(name)
         logger.bind(tag=TAG).debug(f"函数 '{name}' 已加载，可以注册使用")
         return func
 

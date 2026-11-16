@@ -6,6 +6,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -30,15 +31,10 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 
-import cn.hutool.core.date.DatePattern;
-import cn.hutool.core.date.DateUtil;
+import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.map.MapUtil;
 import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
-import cn.hutool.crypto.digest.DigestUtil;
-import cn.hutool.http.ContentType;
-import cn.hutool.http.Header;
-import cn.hutool.http.HttpRequest;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
@@ -55,7 +51,7 @@ import xiaozhi.common.service.impl.BaseServiceImpl;
 import xiaozhi.common.user.UserDetail;
 import xiaozhi.common.utils.ConvertUtils;
 import xiaozhi.common.utils.DateUtils;
-import xiaozhi.common.utils.ToolUtil;
+import xiaozhi.common.utils.JsonUtils;
 import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.dto.DeviceManualAddDTO;
 import xiaozhi.modules.device.dto.DevicePageUserDTO;
@@ -63,6 +59,7 @@ import xiaozhi.modules.device.dto.DeviceReportReqDTO;
 import xiaozhi.modules.device.dto.DeviceReportRespDTO;
 import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.device.entity.OtaEntity;
+import xiaozhi.modules.device.service.DeviceAddressBookService;
 import xiaozhi.modules.device.service.DeviceService;
 import xiaozhi.modules.device.service.OtaService;
 import xiaozhi.modules.device.vo.UserShowDeviceListVO;
@@ -80,6 +77,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
     private final SysParamsService sysParamsService;
     private final RedisUtils redisUtils;
     private final OtaService otaService;
+    private final DeviceAddressBookService deviceAddressBookService;
 
     @Async
     public void updateDeviceConnectionInfo(String agentId, String deviceId, String appVersion) {
@@ -105,15 +103,15 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             throw new RenException(ErrorCode.ACTIVATION_CODE_EMPTY);
         }
         String deviceKey = RedisKeys.getOtaActivationCode(activationCode);
-        Object cacheDeviceId = redisUtils.get(deviceKey);
-        if (ToolUtil.isEmpty(cacheDeviceId)) {
+        String cacheDeviceId = (String) redisUtils.get(deviceKey);
+        if (StringUtils.isBlank(cacheDeviceId)) {
             throw new RenException(ErrorCode.ACTIVATION_CODE_ERROR);
         }
-        String deviceId = (String) cacheDeviceId;
+        String deviceId = cacheDeviceId;
         String safeDeviceId = deviceId.replace(":", "_").toLowerCase();
         String cacheDeviceKey = RedisKeys.getOtaDeviceActivationInfo(safeDeviceId);
-        Map<String, Object> cacheMap = (Map<String, Object>) redisUtils.get(cacheDeviceKey);
-        if (ToolUtil.isEmpty(cacheMap)) {
+        Map<String, Object> cacheMap = JsonUtils.toStringObjectMap(redisUtils.get(cacheDeviceKey));
+        if (MapUtil.isEmpty(cacheMap)) {
             throw new RenException(ErrorCode.ACTIVATION_CODE_ERROR);
         }
         String cachedCode = (String) cacheMap.get("activation_code");
@@ -183,15 +181,8 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
                 .builder(new HashMap<String, Set<String>>())
                 .put("clientIds", deviceIds).build();
 
-        if (ToolUtil.isNotEmpty(deviceIds)) {
-            // 发送请求
-            String resultMessage = HttpRequest.post(url)
-                    .header(Header.CONTENT_TYPE, ContentType.JSON.getValue())
-                    .header(Header.AUTHORIZATION, "Bearer " + generateBearerToken())
-                    .body(JSONUtil.toJsonStr(params))
-                    .timeout(10000) // 超时，毫秒
-                    .execute().body();
-            return resultMessage;
+        if (CollUtil.isNotEmpty(deviceIds)) {
+            return postToMqttGateway(url, params);
         }
         // 返回响应
         return "";
@@ -211,8 +202,8 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             firmware.setUrl(Constant.INVALID_FIRMWARE_URL);
             response.setFirmware(firmware);
         } else {
-            // 只有在设备已绑定且autoUpdate不为0的情况下才返回固件升级信息
-            if (deviceById.getAutoUpdate() != 0) {
+            // 只有在设备已绑定且明确开启自动升级时才返回固件升级信息
+            if (Integer.valueOf(1).equals(deviceById.getAutoUpdate())) {
                 String type = deviceReport.getBoard() == null ? null : deviceReport.getBoard().getType();
                 DeviceReportRespDTO.Firmware firmware = buildFirmwareInfo(type,
                         deviceReport.getApplication() == null ? null : deviceReport.getApplication().getVersion());
@@ -299,12 +290,39 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
     }
 
     @Override
+    public List<UserShowDeviceListVO> getUserDeviceList(Long userId, String agentId) {
+        List<DeviceEntity> devices = getUserDevices(userId, agentId);
+        return devices.stream().map(this::toUserShowDeviceListVO).toList();
+    }
+
+    private UserShowDeviceListVO toUserShowDeviceListVO(DeviceEntity device) {
+        UserShowDeviceListVO vo = ConvertUtils.sourceToTarget(device, UserShowDeviceListVO.class);
+        vo.setDeviceType(device.getBoard());
+        vo.setBoard(device.getBoard());
+        vo.setAutoUpdate(device.getAutoUpdate());
+        vo.setCreateDateTimestamp(toTimestamp(device.getCreateDate()));
+        vo.setLastConnectedAtTimestamp(toTimestamp(device.getLastConnectedAt()));
+        return vo;
+    }
+
+    private Long toTimestamp(Date date) {
+        return date == null ? null : date.getTime();
+    }
+
+    @Override
     public void unbindDevice(Long userId, String deviceId) {
-        // 先查询设备信息，获取agentId
+        // 先查询设备信息，获取agentId和macAddress
         DeviceEntity device = baseDao.selectById(deviceId);
         if (device == null) {
             return;
         }
+        // 后面删通讯录那步是按 mac_address 删的，不看 user_id。
+        // 设备本身因为带了 user_id 条件删不掉，通讯录却会照删不误，
+        // 任意登录用户知道对方的设备 id 就能把对方整本通讯录清空
+        if (userId == null || device.getUserId() == null || !device.getUserId().equals(userId)) {
+            return;
+        }
+        String macAddress = device.getMacAddress();
         if (StringUtils.isNotBlank(device.getAgentId())) {
             // 清除智能体设备数量缓存
             redisUtils.delete(RedisKeys.getAgentDeviceCountById(device.getAgentId()));
@@ -314,6 +332,9 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         wrapper.eq("user_id", userId);
         wrapper.eq("id", deviceId);
         baseDao.delete(wrapper);
+
+        // 删除设备相关的通讯录权限记录
+        deviceAddressBookService.deleteByMacAddresses(Collections.singletonList(macAddress));
     }
 
     @Override
@@ -332,9 +353,23 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
 
     @Override
     public void deleteByAgentId(String agentId) {
+        // 先查询该智能体下的所有设备，获取mac地址用于删除通讯录记录
+        QueryWrapper<DeviceEntity> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("agent_id", agentId);
+        List<DeviceEntity> devices = baseDao.selectList(queryWrapper);
+
+        // 删除设备
         UpdateWrapper<DeviceEntity> wrapper = new UpdateWrapper<>();
         wrapper.eq("agent_id", agentId);
         baseDao.delete(wrapper);
+
+        // 批量删除这些设备相关的所有通讯录权限记录
+        if (!devices.isEmpty()) {
+            List<String> macAddresses = devices.stream()
+                    .map(DeviceEntity::getMacAddress)
+                    .collect(Collectors.toList());
+            deviceAddressBookService.deleteByMacAddresses(macAddresses);
+        }
     }
 
     @Override
@@ -350,12 +385,11 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
                         .like(StringUtils.isNotBlank(dto.getKeywords()), "alias", dto.getKeywords()));
         // 循环处理page获取回来的数据，返回需要的字段
         List<UserShowDeviceListVO> list = page.getRecords().stream().map(device -> {
-            UserShowDeviceListVO vo = ConvertUtils.sourceToTarget(device, UserShowDeviceListVO.class);
+            UserShowDeviceListVO vo = toUserShowDeviceListVO(device);
             // 把最后修改的时间，改为简短描述的时间
             vo.setRecentChatTime(DateUtils.getShortTime(device.getUpdateDate()));
             sysUserUtilService.assignUsername(device.getUserId(),
                     vo::setBindUserName);
-            vo.setDeviceType(device.getBoard());
             return vo;
         }).toList();
         // 计算页数
@@ -372,6 +406,29 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         return baseDao.selectOne(wrapper);
     }
 
+    @Override
+    public DeviceEntity getOwnedDeviceByMacAddress(String macAddress) {
+        if (StringUtils.isBlank(macAddress)) {
+            return null;
+        }
+        // 同一 MAC 可能有两行只差大小写，selectOne 会抛 TooManyResultsException
+        // 把整个读通讯录接口带崩。按 id 取第一条做归属校验，撞行不报错
+        QueryWrapper<DeviceEntity> wrapper = new QueryWrapper<>();
+        wrapper.eq("mac_address", macAddress).orderByAsc("id");
+        List<DeviceEntity> devices = baseDao.selectList(wrapper);
+        if (devices == null || devices.isEmpty()) {
+            return null;
+        }
+        DeviceEntity device = devices.get(0);
+        UserDetail user = SecurityUser.getUser();
+        // getUser() 在取不到 subject、principal 时返回的是空对象，不是 null，
+        // 所以这里不会拿到 null。匿名调用走的就是空对象那一条，id 是空的，比不上
+        if (device.getUserId() == null || !device.getUserId().equals(user.getId())) {
+            return null;
+        }
+        return device;
+    }
+
     private DeviceReportRespDTO.ServerTime buildServerTime() {
         DeviceReportRespDTO.ServerTime serverTime = new DeviceReportRespDTO.ServerTime();
         TimeZone tz = TimeZone.getDefault();
@@ -385,7 +442,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
     public String geCodeByDeviceId(String deviceId) {
         String dataKey = getDeviceCacheKey(deviceId);
 
-        Map<String, Object> cacheMap = (Map<String, Object>) redisUtils.get(dataKey);
+        Map<String, Object> cacheMap = JsonUtils.toStringObjectMap(redisUtils.get(dataKey));
         if (cacheMap != null && cacheMap.containsKey("activation_code")) {
             String cachedCode = (String) cacheMap.get("activation_code");
             return cachedCode;
@@ -659,20 +716,13 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         return mqtt;
     }
 
-    /**
-     * 生成BearerToken
-     */
-    private String generateBearerToken() {
-        try {
-            String dateStr = DateUtil.format(new Date(), DatePattern.NORM_DATE_PATTERN);
-            String signatureKey = sysParamsService.getValue(Constant.SERVER_MQTT_SECRET, false);
-            if (ToolUtil.isEmpty(signatureKey)) {
-                return null;
-            }
-            return DigestUtil.sha256Hex(dateStr + signatureKey);
-        } catch (Exception e) {
-            return null;
-        }
+    private String postToMqttGateway(String url, Object requestBody) {
+        String signatureKey = sysParamsService.getValue(Constant.SERVER_MQTT_SECRET, false);
+        return MqttGatewayAuthorization.postJson(
+                url,
+                JSONUtil.toJsonStr(requestBody),
+                signatureKey,
+                Instant.now());
     }
 
     @Override
@@ -733,13 +783,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
                     .put("payload", payload)
                     .build();
 
-            // 发送请求
-            String resultMessage = HttpRequest.post(url)
-                    .header(Header.CONTENT_TYPE, ContentType.JSON.getValue())
-                    .header(Header.AUTHORIZATION, "Bearer " + generateBearerToken())
-                    .body(JSONUtil.toJsonStr(requestBody))
-                    .timeout(10000) // 超时，毫秒
-                    .execute().body();
+            String resultMessage = postToMqttGateway(url, requestBody);
 
             // 解析响应
             if (StringUtils.isBlank(resultMessage)) {
@@ -830,13 +874,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
                 .put("payload", payload)
                 .build();
 
-        // 发送请求
-        String resultMessage = HttpRequest.post(url)
-                .header(Header.CONTENT_TYPE, ContentType.JSON.getValue())
-                .header(Header.AUTHORIZATION, "Bearer " + generateBearerToken())
-                .body(JSONUtil.toJsonStr(requestBody))
-                .timeout(10000) // 超时，毫秒
-                .execute().body();
+        String resultMessage = postToMqttGateway(url, requestBody);
 
         // 解析响应
         if (StringUtils.isNotBlank(resultMessage)) {

@@ -7,10 +7,10 @@ import asyncio
 import traceback
 import websockets
 
-from asyncio import Task
 from typing import Callable, Any
 from config.logger import setup_logging
 from core.utils.tts import MarkdownCleaner
+from core.utils.alibl_endpoint import build_ws_connect_options, resolve_ws_url
 from core.providers.tts.base import TTSProviderBase
 from core.providers.tts.dto.dto import SentenceType, ContentType, InterfaceType
 
@@ -33,10 +33,10 @@ class TTSProvider(TTSProviderBase):
         self.api_key = config.get("api_key")
         if not self.api_key:
             raise ValueError("api_key is required for CosyVoice TTS")
-        self.report_on_last = True
 
         # WebSocket配置
-        self.ws_url = "wss://dashscope.aliyuncs.com/api-ws/v1/inference/"
+        self.ws_url = resolve_ws_url(config.get("ws_url"))
+        self.ws_connect_options = build_ws_connect_options(self.tts_timeout)
         self.ws = None
         self._monitor_task = None
         self.activate_session = False
@@ -80,12 +80,16 @@ class TTSProvider(TTSProviderBase):
                 return self.ws
             logger.bind(tag=TAG).debug("开始建立新连接...")
 
+            # 建立新连接前取消旧监听任务
+            await self._cancel_monitor_task()
+
             self.ws = await websockets.connect(
                 self.ws_url,
                 additional_headers=self.header,
                 ping_interval=30,
                 ping_timeout=10,
                 close_timeout=10,
+                **self.ws_connect_options,
             )
 
             logger.bind(tag=TAG).debug("WebSocket连接建立成功")
@@ -306,16 +310,7 @@ class TTSProvider(TTSProviderBase):
         """清理资源"""
         await super().close()
         self.activate_session = False
-        # 取消监听任务
-        if self._monitor_task:
-            try:
-                self._monitor_task.cancel()
-                await self._monitor_task
-            except asyncio.CancelledError:
-                pass
-            except Exception as e:
-                logger.bind(tag=TAG).warning(f"关闭时取消监听任务错误: {e}")
-            self._monitor_task = None
+        await self._cancel_monitor_task()
 
         # 关闭WebSocket连接
         if self.ws:
@@ -325,6 +320,18 @@ class TTSProvider(TTSProviderBase):
                 pass
             self.ws = None
             self.last_active_time = None
+    
+    async def _cancel_monitor_task(self):
+        """取消监听任务"""
+        if self._monitor_task and not self._monitor_task.done():
+            self._monitor_task.cancel()
+            try:
+                await self._monitor_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.bind(tag=TAG).warning(f"取消监听任务错误: {e}")
+        self._monitor_task = None
 
     async def _start_monitor_tts_response(self):
         """监听TTS响应 - 长期运行"""
@@ -350,18 +357,15 @@ class TTSProvider(TTSProviderBase):
 
                             if event == "task-started":
                                 logger.bind(tag=TAG).debug("TTS任务启动成功~")
-                                self.tts_audio_queue.put((SentenceType.FIRST, [], None))
                             elif event == "result-generated":
-                                # 发送缓存的数据
-                                tts_text = self.get_tts_text(self.conn.sentence_id)
-                                if tts_text:
-                                    logger.bind(tag=TAG).info(
-                                        f"句子语音生成成功： {tts_text}"
-                                    )
-                                    self.tts_audio_queue.put(
-                                        (SentenceType.FIRST, [], tts_text)
-                                    )
-                                    self.clear_tts_text(self.conn.sentence_id)
+                                output = data.get("payload", {}).get("output", {})
+                                if output.get("type") == "sentence-begin":
+                                    original_text = output.get("original_text")
+                                    self.tts_text = self._restore_original_text(original_text)
+                                    logger.bind(tag=TAG).debug(f"句子语音生成开始: {self.tts_text}")
+                                    self.tts_audio_queue.put((SentenceType.FIRST, [], self.tts_text))
+                                elif output.get("type") == "sentence-end":
+                                    logger.bind(tag=TAG).info(f"句子语音生成成功： {self.tts_text}")
                             elif event == "task-finished":
                                 logger.bind(tag=TAG).debug("TTS任务完成~")
                                 self.activate_session = False
@@ -438,6 +442,7 @@ class TTSProvider(TTSProviderBase):
                     ping_timeout=10,
                     close_timeout=10,
                     max_size=10 * 1024 * 1024,
+                    **self.ws_connect_options,
                 )
 
                 try:

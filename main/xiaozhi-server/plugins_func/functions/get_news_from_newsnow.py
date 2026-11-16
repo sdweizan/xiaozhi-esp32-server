@@ -1,9 +1,10 @@
 import random
-import requests
-import json
+import httpx
+from io import BytesIO
+from urllib.parse import quote, urlsplit, urlunsplit, parse_qsl
+from markitdown import MarkItDown, StreamInfo
 from config.logger import setup_logging
 from plugins_func.register import register_function, ToolType, ActionResponse, Action
-from markitdown import MarkItDown
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -54,6 +55,27 @@ CHANNEL_MAP = {
 # 默认新闻来源字典，当配置中没有指定时使用
 DEFAULT_NEWS_SOURCES = "澎湃新闻;百度热搜;财联社"
 
+DEFAULT_NEWS_API_URL = "https://newsnow.busiyi.world/api/s?id="
+
+
+def _build_news_api_url(source, configured_url=None):
+    """拼出新闻接口的请求地址和查询参数。
+
+    配置里带 {source} 占位符就替换占位符；否则把 id 设成新闻源 id，
+    这样配置里已经写了 id 时也不会拼出脏串。
+    """
+    api_url = str(configured_url).strip() if configured_url else DEFAULT_NEWS_API_URL
+    if "{source}" in api_url:
+        return api_url.replace("{source}", quote(source, safe="")), None
+    parts = urlsplit(api_url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query["id"] = source
+    return (
+        urlunsplit((parts.scheme, parts.netloc, parts.path, "", parts.fragment)),
+        query,
+    )
+
+
 def _get_newsnow_config(conn):
     # 从连接配置获取
     plugins = conn.config.get("plugins", {})
@@ -61,6 +83,8 @@ def _get_newsnow_config(conn):
     sources = newsnow.get("news_sources", "")
     if isinstance(sources, str) and sources.strip():
         return sources
+    if isinstance(sources, (list, tuple)):
+        return ";".join(str(item).strip() for item in sources if str(item).strip())
 
     return ""
 
@@ -110,42 +134,52 @@ GET_NEWS_FROM_NEWSNOW_FUNCTION_DESC = {
 }
 
 
-def fetch_news_from_api(conn: "ConnectionHandler", source="thepaper"):
+async def fetch_news_from_api(conn: "ConnectionHandler", source="thepaper"):
     """从API获取新闻列表"""
     try:
-        api_url = f"https://newsnow.busiyi.world/api/s?id={source}"
-
         news_config = conn.config.get("plugins", {}).get("get_news_from_newsnow", {})
-        if news_config.get("url"):
-            api_url = news_config["url"] + source
+        configured_url = news_config.get("url") if isinstance(news_config, dict) else None
+        api_url, request_params = _build_news_api_url(source, configured_url)
 
         headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(api_url, headers=headers, timeout=10)
-        response.raise_for_status()
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=3.0)) as client:
+            response = await client.get(api_url, params=request_params, headers=headers)
 
+        if response.status_code != 200:
+            logger.bind(tag=TAG).error(
+                f"获取新闻API失败：HTTP {response.status_code}，source={source}"
+            )
+            return []
         data = response.json()
 
-        if "items" in data:
-            return data["items"]
-        else:
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list):
             logger.bind(tag=TAG).error(f"获取新闻API响应格式错误: {data}")
             return []
+        return [item for item in items if isinstance(item, dict) and item.get("title")]
 
     except Exception as e:
         logger.bind(tag=TAG).error(f"获取新闻API失败: {e}")
         return []
 
 
-def fetch_news_detail(url):
+async def fetch_news_detail(url):
     """获取新闻详情页内容并使用MarkItDown清理HTML"""
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=3.0)) as client:
+            response = await client.get(url, headers=headers)
 
         # 使用MarkItDown清理HTML内容
         md = MarkItDown(enable_plugins=False)
-        result = md.convert(response)
+        result = md.convert_stream(
+            BytesIO(response.content),
+            stream_info=StreamInfo(
+                mimetype="text/html",
+                extension=".html",
+                charset=response.encoding or "utf-8",
+            ),
+        )
 
         # 获取清理后的文本内容
         clean_text = result.text_content
@@ -166,7 +200,7 @@ def fetch_news_detail(url):
     GET_NEWS_FROM_NEWSNOW_FUNCTION_DESC,
     ToolType.SYSTEM_CTL,
 )
-def get_news_from_newsnow(
+async def get_news_from_newsnow(
     conn: "ConnectionHandler",
     source: str = "澎湃新闻",
     detail: bool = False,
@@ -206,7 +240,7 @@ def get_news_from_newsnow(
             )
 
             # 获取新闻详情
-            detail_content = fetch_news_detail(url)
+            detail_content = await fetch_news_detail(url)
 
             if not detail_content or detail_content == "无法获取详细内容":
                 return ActionResponse(
@@ -232,23 +266,29 @@ def get_news_from_newsnow(
         english_source_id = None
 
         # 检查输入的中文名称是否在配置的新闻源中
-        news_sources_list = [
-            name.strip() for name in news_sources.split(";") if name.strip()
-        ]
+        news_sources_list = [name.strip() for name in news_sources.split(";") if name.strip()]
         if source in news_sources_list:
-            # 如果输入的中文名称在配置的新闻源中，在 CHANNEL_MAP 中查找对应的英文ID
+            english_source_id = CHANNEL_MAP.get(source)
+        elif not source and news_sources_list:
+            source = news_sources_list[0]
             english_source_id = CHANNEL_MAP.get(source)
 
         # 如果找不到对应的英文ID，使用默认源
         if not english_source_id:
-            logger.bind(tag=TAG).warning(f"无效的新闻源: {source}，使用默认源澎湃新闻")
-            english_source_id = "thepaper"
-            source = "澎湃新闻"
+            fallback_source = next(
+                (name for name in news_sources_list if CHANNEL_MAP.get(name)),
+                "澎湃新闻",
+            )
+            logger.bind(tag=TAG).warning(
+                f"无效的新闻源: {source}，使用配置中的默认源{fallback_source}"
+            )
+            english_source_id = CHANNEL_MAP[fallback_source]
+            source = fallback_source
 
         logger.bind(tag=TAG).info(f"获取新闻: 新闻源={source}({english_source_id})")
 
         # 获取新闻列表
-        news_items = fetch_news_from_api(conn, english_source_id)
+        news_items = await fetch_news_from_api(conn, english_source_id)
 
         if not news_items:
             return ActionResponse(
@@ -259,20 +299,21 @@ def get_news_from_newsnow(
 
         # 随机选择一条新闻
         selected_news = random.choice(news_items)
+        title = selected_news.get("title", "未知标题")
 
         # 保存当前新闻链接到连接对象，以便后续查询详情
         if not hasattr(conn, "last_newsnow_link"):
             conn.last_newsnow_link = {}
         conn.last_newsnow_link = {
             "url": selected_news.get("url", "#"),
-            "title": selected_news.get("title", "未知标题"),
+            "title": title,
             "source_id": english_source_id,
         }
 
         # 构建新闻报告
         news_report = (
             f"根据下列数据，用{lang}回应用户的新闻查询请求：\n\n"
-            f"新闻标题: {selected_news['title']}\n"
+            f"新闻标题: {title}\n"
             # f"新闻来源: {source}\n"
             f"(请以自然、流畅的方式向用户播报这条新闻标题，"
             f"提示用户可以要求获取详细内容，此时会获取新闻的详细内容。)"

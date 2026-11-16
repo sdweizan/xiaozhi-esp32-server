@@ -6,9 +6,9 @@ import traceback
 from pathlib import Path
 from core.handle.sendAudioHandle import send_stt_message
 from core.handle.migu_music_handler import should_use_migu, handle_migu_music
-from plugins_func.register import register_function, ToolType, ActionResponse, Action
 from core.utils.dialogue import Message
 from core.providers.tts.dto.dto import TTSMessageDTO, SentenceType, ContentType
+from plugins_func.register import register_function, ToolType, ActionResponse, Action
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:

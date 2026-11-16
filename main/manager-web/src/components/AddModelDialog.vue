@@ -1,39 +1,39 @@
 <template>
-  <el-dialog :visible="dialogVisible" @update:visible="handleVisibleChange" width="57%" center
-    custom-class="custom-dialog" :show-close="false" class="center-dialog">
-    <div style="margin: 0 18px; text-align: left; padding: 10px; border-radius: 10px;">
-      <div style="font-size: 30px; color: #3d4566; margin-top: -10px; margin-bottom: 10px; text-align: center;">
-        {{ $t('modelConfigDialog.addModel') }}
-      </div>
-
-      <button class="custom-close-btn" @click="handleClose">
-        ×
-      </button>
-
+  <CustomDialog
+    :visible.sync="dialogVisible"
+    :title="$t('modelConfigDialog.addModel')"
+    width="960px"
+    size="large"
+    class="add-model-dialog"
+    :confirmLoading="saving"
+    @close="handleClose"
+    @confirm="confirm"
+  >
+    <div class="dialog-content">
       <!-- 模型信息部分 -->
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-        <div style="font-size: 20px; font-weight: bold; color: #3d4566;">{{ $t('modelConfigDialog.modelInfo') }}</div>
-        <div style="display: flex; align-items: center; gap: 20px;">
-          <div style="display: flex; align-items: center;">
-            <span style="margin-right: 8px;">{{ $t('modelConfigDialog.enable') }}</span>
+      <div class="section-header">
+        <div class="section-title">{{ $t('modelConfigDialog.modelInfo') }}</div>
+        <div class="switch-group">
+          <div class="switch-item">
+            <span>{{ $t('modelConfigDialog.enable') }}</span>
             <el-switch v-model="formData.isEnabled" class="custom-switch"></el-switch>
           </div>
-          <div style="display: none; align-items: center;">
-            <span style="margin-right: 8px;">{{ $t('modelConfigDialog.setDefault') }}</span>
+          <div class="switch-item" style="display: none;">
+            <span>{{ $t('modelConfigDialog.setDefault') }}</span>
             <el-switch v-model="formData.isDefault" class="custom-switch"></el-switch>
           </div>
         </div>
       </div>
 
-      <div style="height: 2px; background: #e9e9e9; margin-bottom: 22px;"></div>
-      <el-form :model="formData" label-width="100px" label-position="left" class="custom-form">
-        <div style="display: flex; gap: 20px; margin-bottom: 0;">
+      <div class="divider"></div>
+      <el-form :model="formData" label-width="auto" label-position="left" class="custom-form">
+        <div class="form-row">
           <el-form-item :label="$t('modelConfigDialog.modelId')" prop="id" style="flex: 1;">
             <el-input v-model="formData.id" :placeholder="$t('modelConfigDialog.enterModelId')" class="custom-input-bg"
               maxlength="32"></el-input>
           </el-form-item>
         </div>
-        <div style="display: flex; gap: 20px; margin-bottom: 0;">
+        <div class="form-row">
           <el-form-item :label="$t('modelConfigDialog.modelName')" prop="modelName" style="flex: 1;">
             <el-input v-model="formData.modelName" :placeholder="$t('modelConfigDialog.enterModelName')"
               class="custom-input-bg"></el-input>
@@ -44,7 +44,7 @@
           </el-form-item>
         </div>
 
-        <div style="display: flex; gap: 20px; margin-bottom: 0;">
+        <div class="form-row">
           <el-form-item :label="$t('modelConfigDialog.supplier')" prop="supplier" style="flex: 1;">
             <el-select v-model="formData.supplier" :placeholder="$t('modelConfigDialog.selectSupplier')"
               class="custom-select custom-input-bg" style="width: 100%;" @focus="loadProviders" filterable>
@@ -56,7 +56,6 @@
               class="custom-input-bg"></el-input>
           </el-form-item>
         </div>
-
 
         <el-form-item :label="$t('modelConfigDialog.docLink')" prop="docLink" style="margin-bottom: 27px;">
           <el-input v-model="formData.docLink" :placeholder="$t('modelConfigDialog.enterDocLink')"
@@ -70,34 +69,39 @@
         </el-form-item>
       </el-form>
 
-      <div style="font-size: 20px; font-weight: bold; color: #3d4566; margin-bottom: 15px;">{{
-        $t('modelConfigDialog.callInfo') }}</div>
-      <div style="height: 2px; background: #e9e9e9; margin-bottom: 22px;"></div>
+      <teleport v-if="chunkedCallInfoFields.length">
+        <div class="section-title">{{ $t('modelConfigDialog.callInfo') }}</div>
+        <div class="divider"></div>
+      </teleport>
 
       <el-form :model="formData.configJson" label-width="auto" label-position="left" class="custom-form">
-        <div v-for="(row, rowIndex) in chunkedCallInfoFields" :key="rowIndex"
-          style="display: flex; gap: 20px; margin-bottom: 0;">
+        <div v-for="(row, rowIndex) in chunkedCallInfoFields" :key="rowIndex" class="form-row">
           <el-form-item v-for="field in row" :key="field.prop" :label="field.label" :prop="field.prop" style="flex: 1;">
-            <el-input v-model="formData.configJson[field.prop]" :placeholder="field.placeholder"
+            <el-select v-if="field.type === 'select'" v-model="formData.configJson[field.prop]"
+              :placeholder="field.placeholder" class="custom-input-bg" style="width: 100%">
+              <el-option v-for="opt in field.options" :key="opt" :label="opt" :value="opt"></el-option>
+            </el-select>
+            <el-input v-else-if="field.type === 'json-textarea'" v-model="formData.configJson[field.prop]" type="textarea"
+              :rows="3" :placeholder="field.placeholder" class="custom-input-bg">
+            </el-input>
+            <el-input v-else v-model="formData.configJson[field.prop]" :placeholder="field.placeholder"
               :type="field.type || 'text'" class="custom-input-bg" :show-password="field.type === 'password'">
             </el-input>
           </el-form-item>
         </div>
       </el-form>
     </div>
-
-    <div style="display: flex;justify-content: center;">
-      <el-button type="primary" @click="confirm" class="save-btn" :loading="saving" :disabled="saving">
-        {{ $t('modelConfigDialog.save') }}
-      </el-button>
-    </div>
-  </el-dialog>
+  </CustomDialog>
 </template>
 
 <script>
 import Api from '@/apis/api';
+import CustomDialog from './CustomDialog.vue';
 export default {
   name: 'AddModelDialog',
+  components: {
+    CustomDialog
+  },
   props: {
     visible: { type: Boolean, required: true },
     modelType: { type: String, required: true }
@@ -164,7 +168,8 @@ export default {
           fields: JSON.parse(item.fields || '[]').map(f => ({
             label: f.label,
             prop: f.key,
-            type: f.type === 'password' ? 'password' : 'text',
+            type: f.type === 'dict' ? 'json-textarea' : f.type === 'password' ? 'password' : (f.type === 'select' ? 'select' : 'text'),
+            options: f.options || [],
             placeholder: `请输入${f.key}`
           }))
         }))
@@ -178,16 +183,10 @@ export default {
       });
       this.formData.configJson = { ...defaultConfig };
     },
-    handleVisibleChange(val) {
-      this.dialogVisible = val;
-      this.$emit('update:visible', val);
-      if (!val) {
-        this.resetForm();
-      }
-    },
 
     handleClose() {
       this.saving = false;
+      this.dialogVisible = false;
       this.$emit('update:visible', false);
     },
     initDynamicConfig() {
@@ -213,6 +212,24 @@ export default {
         return;
       }
 
+      // dict 字段必须解析为 JSON 对象再提交，否则会以字符串入库
+      for (const field of this.providerFields) {
+        if (field.type !== 'json-textarea') continue;
+        const raw = this.formData.configJson[field.prop];
+        if (!raw || typeof raw === 'object') continue;
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            throw new Error('not object');
+          }
+          this.formData.configJson[field.prop] = parsed;
+        } catch (e) {
+          this.$message.error('必须输入字典格式（如 {"key":"value"}）');
+          this.saving = false;
+          return;
+        }
+      }
+
       const submitData = {
         id: this.formData.id || '',
         modelName: this.formData.modelName || '',
@@ -232,7 +249,7 @@ export default {
 
       try {
         this.$emit('confirm', submitData);
-        this.$emit('update:visible', false);
+        this.handleClose();
         this.resetForm();
       } catch (e) {
         console.error(e);
@@ -297,133 +314,70 @@ export default {
 }
 </script>
 
-<style>
-.custom-dialog {
-  position: relative;
-  border-radius: 20px;
-  overflow: hidden;
-  background: white;
-  padding-bottom: 17px;
-}
+<style lang="scss" scoped>
+@import '@/styles/global.scss';
 
-.custom-dialog .el-dialog__header {
-  padding: 0;
-  border-bottom: none;
+::v-deep .el-dialog {
+  margin-top: 6vh !important;
 }
-
-.center-dialog {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+::v-deep .el-dialog__body {
+  max-height: 60vh;
+  overflow-y: auto;
+  @include scrollbar-style;
 }
+.add-model-dialog {
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
 
-.center-dialog .el-dialog {
-  margin: 0 0 auto !important;
-  display: flex;
-  flex-direction: column;
-}
+  .section-title {
+    margin-bottom: 10px;
+    font-size: 20px;
+    font-weight: bold;
+    color: #3d4566;
+    text-align: left;
+  }
 
-.custom-close-btn {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  width: 35px;
-  height: 35px;
-  border-radius: 50%;
-  border: 2px solid #cfcfcf;
-  background: none;
-  font-size: 30px;
-  font-weight: lighter;
-  color: #cfcfcf;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1;
-  padding: 0;
-  outline: none;
-}
+  .switch-group {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
 
-.custom-close-btn:hover {
-  color: #409EFF;
-  border-color: #409EFF;
-}
+  .switch-item {
+    display: flex;
+    align-items: center;
 
-.custom-select .el-input__suffix {
-  background: #e6e8ea;
-  right: 6px;
-  width: 20px;
-  height: 20px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  top: 9px;
-}
+    span {
+      margin-right: 8px;
+    }
+  }
 
-.custom-select .el-input__suffix-inner {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-}
+  .divider {
+    height: 1px;
+    background: #e9e9e9;
+    margin-bottom: 16px;
+  }
 
-.custom-select .el-icon-arrow-up:before {
-  content: "";
-  display: inline-block;
-  width: 0;
-  height: 0;
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-top: 7px solid #c0c4cc;
-  position: relative;
-  top: -2px;
-  transform: rotate(180deg);
+  .form-row {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 0;
+  }
+
+  .dialog-footer {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    padding: 16px 20px;
+  }
 }
 
 .custom-form .el-form-item {
-  margin-bottom: 20px;
+  margin-bottom: 10px;
 }
-
-.custom-form .el-form-item__label {
-  color: #3d4566;
-  font-weight: normal;
-  text-align: right;
-  padding-right: 20px;
-
-}
-
-.custom-form .el-form-item.prop-remark .el-form-item__label {
-  margin-top: -4px;
-}
-
-.custom-input-bg .el-input__inner::-webkit-input-placeholder,
-.custom-input-bg .el-textarea__inner::-webkit-input-placeholder {
-  color: #9c9f9e;
-}
-
-
-.custom-input-bg .el-input__inner,
-.custom-input-bg .el-textarea__inner {
-  background-color: #ffffff;
-}
-
-
-.save-btn {
-  background: #e6f0fd;
-  color: #237ff4;
-  border: 1px solid #b3d1ff;
-  width: 150px;
-  height: 40px;
-  font-size: 16px;
-  transition: all 0.3s ease;
-}
-
-.save-btn:hover {
-  background: linear-gradient(to right, #237ff4, #9c40d5);
-  color: white;
-  border: none;
-}
-
 
 .custom-switch .el-switch__core {
   border-radius: 20px;
@@ -439,7 +393,7 @@ export default {
   background-color: white;
   top: 3px;
   left: 4px;
-  transition: all .3s;
+  transition: all 0.3s;
 }
 
 .custom-switch.is-checked .el-switch__core {
@@ -454,12 +408,10 @@ export default {
   background-color: #1b47ee;
 }
 
-
-[style*="display: flex"] {
-  gap: 20px;
-}
-
 .custom-input-bg .el-input__inner {
+  height: 32px;
+}
+::v-deep .el-input__inner {
   height: 32px;
 }
 </style>

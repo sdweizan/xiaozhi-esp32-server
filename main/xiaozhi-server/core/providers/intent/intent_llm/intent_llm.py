@@ -1,9 +1,11 @@
+import asyncio
 from typing import List, Dict, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from core.connection import ConnectionHandler
 from ..base import IntentProviderBase
 from plugins_func.functions.play_music import initialize_music_handler
+from plugins_func.functions.hass_init import _devices_text, _hass_plugin_config
 from config.logger import setup_logging
 from core.utils.util import get_system_error_response
 import re
@@ -120,12 +122,18 @@ class IntentProvider(IntentProviderBase):
         )
         return prompt
 
-    def replyResult(self, text: str, original_text: str):
+    async def replyResult(self, text: str, original_text: str):
+        """使用 asyncio.to_thread 避免阻塞事件循环"""
         try:
-            llm_result = self.llm.response_no_stream(
+            user_prompt = (
+                "请根据以上内容，像人类一样说话的口吻回复用户，要求简洁，请直接返回结果。用户现在说："
+                + original_text
+            )
+            # 使用 to_thread 将同步阻塞调用放到线程池中执行，不阻塞事件循环
+            llm_result = await asyncio.to_thread(
+                self.llm.response_no_stream,
                 system_prompt=text,
-                user_prompt="请根据以上内容，像人类一样说话的口吻回复用户，要求简洁，请直接返回结果。用户现在说："
-                + original_text,
+                user_prompt=user_prompt,
             )
             return llm_result
         except Exception as e:
@@ -174,16 +182,11 @@ class IntentProvider(IntentProviderBase):
         music_file_names = music_config["music_file_names"]
         prompt_music = f"{self.promot}\n<musicNames>{music_file_names}\n</musicNames>"
 
-        home_assistant_cfg = conn.config["plugins"].get("home_assistant")
-        if home_assistant_cfg:
-            devices = home_assistant_cfg.get("devices", [])
-        else:
-            devices = []
-        if len(devices) > 0:
+        plugin_config = _hass_plugin_config(conn.config.get("plugins", {}))
+        devices_text = _devices_text(plugin_config.get("devices", ""))
+        if devices_text:
             hass_prompt = "\n下面是我家智能设备列表（位置，设备名，entity_id），可以通过homeassistant控制\n"
-            for device in devices:
-                hass_prompt += device + "\n"
-            prompt_music += hass_prompt
+            prompt_music += hass_prompt + devices_text + "\n"
 
         logger.bind(tag=TAG).debug(f"User prompt: {prompt_music}")
 
@@ -207,8 +210,11 @@ class IntentProvider(IntentProviderBase):
         logger.bind(tag=TAG).info(f"开始LLM意图识别调用, 模型: {model_info}")
 
         try:
-            intent = self.llm.response_no_stream(
-                system_prompt=prompt_music, user_prompt=user_prompt
+            # 使用 to_thread 将同步阻塞调用放到线程池中，避免阻塞事件循环
+            intent = await asyncio.to_thread(
+                self.llm.response_no_stream,
+                system_prompt=prompt_music,
+                user_prompt=user_prompt,
             )
         except Exception as e:
             logger.bind(tag=TAG).error(f"Error in intent detection LLM call: {e}")

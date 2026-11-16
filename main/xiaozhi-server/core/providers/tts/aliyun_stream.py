@@ -38,7 +38,7 @@ class AccessToken:
         return encoded_text.replace("+", "%20").replace("*", "%2A").replace("%7E", "~")
 
     @staticmethod
-    def create_token(access_key_id, access_key_secret):
+    def create_token(access_key_id, access_key_secret, timeout):
         parameters = {
             "AccessKeyId": access_key_id,
             "Action": "CreateToken",
@@ -75,7 +75,7 @@ class AccessToken:
 
         import requests
 
-        response = requests.get(full_url)
+        response = requests.get(full_url, timeout=timeout)
         if response.ok:
             root_obj = response.json()
             key = "Token"
@@ -152,7 +152,7 @@ class TTSProvider(TTSProviderBase):
         """刷新Token并记录过期时间"""
         if self.access_key_id and self.access_key_secret:
             self.token, expire_time_str = AccessToken.create_token(
-                self.access_key_id, self.access_key_secret
+                self.access_key_id, self.access_key_secret, self.tts_timeout
             )
             if not expire_time_str:
                 raise ValueError("无法获取有效的Token过期时间")
@@ -192,6 +192,9 @@ class TTSProvider(TTSProviderBase):
                 logger.bind(tag=TAG).debug(f"使用已有链接..., task_id: {self.task_id}")
                 return self.ws
             logger.bind(tag=TAG).debug("开始建立新连接...")
+
+            # 建立新连接前取消旧监听任务
+            await self._cancel_monitor_task()
 
             self.ws = await websockets.connect(
                 self.ws_url,
@@ -401,15 +404,7 @@ class TTSProvider(TTSProviderBase):
         """资源清理"""
         await super().close()
         self.activate_session = False
-        if self._monitor_task:
-            try:
-                self._monitor_task.cancel()
-                await self._monitor_task
-            except asyncio.CancelledError:
-                pass
-            except Exception as e:
-                logger.bind(tag=TAG).warning(f"关闭时取消监听任务错误: {e}")
-            self._monitor_task = None
+        await self._cancel_monitor_task()
 
         if self.ws:
             try:
@@ -503,6 +498,18 @@ class TTSProvider(TTSProviderBase):
             sample_rate=self.conn.sample_rate,
             opus_encoder=None,
         )
+
+    async def _cancel_monitor_task(self):
+        """取消监听任务"""
+        if self._monitor_task and not self._monitor_task.done():
+            self._monitor_task.cancel()
+            try:
+                await self._monitor_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.bind(tag=TAG).warning(f"取消监听任务错误: {e}")
+        self._monitor_task = None
 
     def to_tts(self, text: str) -> list:
         """非流式TTS处理，用于测试及保存音频文件的场景"""
