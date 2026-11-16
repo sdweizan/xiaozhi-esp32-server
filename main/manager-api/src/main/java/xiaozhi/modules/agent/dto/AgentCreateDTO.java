@@ -4,6 +4,7 @@ import java.io.Serializable;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import lombok.Builder;
 import lombok.Data;
 
 /**
@@ -11,6 +12,7 @@ import lombok.Data;
  * 专用于新增智能体，不包含id、agentCode和sort字段，这些字段由系统自动生成/设置默认值
  */
 @Data
+@Builder
 @Schema(description = "智能体创建对象")
 public class AgentCreateDTO implements Serializable {
     private static final long serialVersionUID = 1L;

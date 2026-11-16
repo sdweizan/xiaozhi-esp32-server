@@ -136,9 +136,13 @@ plugins:
   # 申请地址：https://console.qweather.com/#/apps/create-key/over
   # 申请后通过这个链接可以找到自己的apihost：https://console.qweather.com/setting?lang=zh
   get_weather:
-    api_host: "mj7p3y7naa.re.qweatherapi.com"
-    api_key: "a861d0d5e7bf4ee1a83d9a9e4f96d4da"
+    api_host: "pp7jpjugqp.re.qweatherapi.com"
+    api_key: "4907747499e24f678a9ba3feac04e5b5"
     default_location: "广州"
+  # 故事分类与内容插件配置
+  # 申请地址：https://market.aliyun.com/detail/cmapi00043205
+  get_story:
+    appcode: "b97cce451f5a46b2acdc0ccbdc744b31"
   # 获取新闻插件的配置，这里根据需要的新闻类型传入对应的url链接，默认支持社会、科技、财经新闻
   # 更多类型的新闻列表查看 https://www.chinanews.com.cn/rss/
   get_news_from_chinanews:
@@ -162,6 +166,30 @@ plugins:
       - ".wav"
       - ".p3"
     refresh_time: 300 # 刷新音乐列表的时间间隔，单位为秒
+    # 曲库中找不到用户点播的歌曲时的提示语，随后会随机播放一首本地音乐
+    # 占位符：{song}=用户点播的歌名，{played}=实际播放的歌名
+    not_found_prompt: "版权音乐无法播放，为您播放《{played}》"
+    # 曲库为空（或音乐目录不存在）时的提示语
+    empty_library_text: "版权音乐无法播放，本地曲库暂时没有可播放的歌曲。"
+  # 咪咕音乐鉴权配置（厂商根据设备 SN 查询咪咕授权信息）
+  # 收到"播放xxx音乐/歌曲"时，先调用咪咕接口判断该设备是否已授权：
+  #   已授权 → 下发 歌曲关键词 + 手机号（密文）给客户端，由客户端咪咕 SDK 完成搜索与播放
+  #   未授权 → 播报未授权提示
+  # 仅对在 hello 中声明 features.migu 且上报了 sn 的设备生效
+  migu_music:
+    enable: true                   # 总开关，默认关闭；关闭时行为与原来完全一致（联调期已打开）
+    base_url: "https://a2link.komect.com"
+    path: "/lx-device-manager/cloud/json/miniprogram/migu/auth/queryBySn"
+    client_id: "7ed737ca335746af956924b64ad25e69"      # 璇玑颁发的 clientId
+    client_secret: "50a4686d49da4a99aa751d8a96109136"  # 璇玑颁发的 clientSecret
+    product_code: "TEST"           # 产品编码，对接期固定传 TEST，正式编码下发后替换
+    timeout: 8                     # 鉴权接口超时时间（秒）
+    cache_ttl: 300                 # 按 SN 缓存鉴权结果的秒数，0 表示不缓存
+    require_client_feature: true   # 是否要求客户端在 hello 中声明 features.migu
+    fallback_to_local: false       # 鉴权接口异常时是否回退本地音乐播放（联调期关闭，便于暴露问题）
+    speak_text_on_authorized: ""   # 已授权时服务端播报文案，留空则不播报（由客户端播放音乐）
+    speak_text_on_unauthorized: "该设备尚未授权咪咕音乐，请先在手机App中绑定手机号后再试。"
+    speak_text_on_error: "音乐服务暂时不可用，请稍后再试。"
   search_from_ragflow:
     # 知识库的描述信息，方便大语言模型知道什么时候调用
     description: "当用户问xxx时，调用本方法，使用知识库中的信息回答问题"

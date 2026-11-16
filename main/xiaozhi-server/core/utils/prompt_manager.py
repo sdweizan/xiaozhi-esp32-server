@@ -4,9 +4,7 @@
 """
 
 import os
-import asyncio
 import hashlib
-import threading
 from typing import Dict, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -144,95 +142,28 @@ class PromptManager:
         return today_date, today_weekday, lunar_date
 
     def _get_location_info(self, client_ip: str) -> str:
-        """获取位置信息"""
-        try:
-            # 先从缓存获取
-            cached_location = self.cache_manager.get(self.CacheType.LOCATION, client_ip)
-            if cached_location is not None:
-                return cached_location
+        """不再按 IP 推断所在地，固定返回空
 
-            # 缓存未命中，调用API获取
-            from core.utils.util import get_ip_info
-
-            ip_info = get_ip_info(client_ip, self.logger)
-            city = ip_info.get("city", "未知位置")
-            location = f"{city}"
-
-            # 存入缓存
-            self.cache_manager.set(self.CacheType.LOCATION, client_ip, location)
-            return location
-        except Exception as e:
-            self.logger.bind(tag=TAG).error(f"获取位置信息失败: {e}")
-            return "未知位置"
+        定向流量卡的出口 IP 归属运营商节点，与用户实际所在地无关，据此定位会
+        把错误城市写进提示词。所在地改为对话获取：模型未知时先追问，用户说出
+        城市后再调 get_weather，见 agent-base-prompt.txt 的 <location_and_weather>。
+        """
+        return ""
 
     def _get_weather_info(self, conn: "ConnectionHandler", location: str) -> str:
-        """获取天气信息"""
-        try:
-            # 先从缓存获取
-            cached_weather = self.cache_manager.get(self.CacheType.WEATHER, location)
-            if cached_weather is not None:
-                return cached_weather
+        """不再在建立连接时预取天气，固定返回空
 
-            # 缓存未命中，调用 async get_weather 函数
-            # Windows ProactorEventLoop 不支持 run_coroutine_threadsafe().result()
-            # 因此用 call_soon_threadsafe 提交任务 + threading.Event 等待结果
-            # 注意：Event.wait() 只阻塞当前线程池线程，不阻塞主事件循环
-            from plugins_func.functions.get_weather import get_weather
-            from plugins_func.register import ActionResponse
-
-            result_holder = []
-            exception_holder = []
-
-            async def _call():
-                try:
-                    result_holder.append(
-                        await get_weather(conn, location=location, lang="zh_CN")
-                    )
-                except Exception as e:
-                    exception_holder.append(e)
-                finally:
-                    event.set()
-
-            event = threading.Event()
-            conn.loop.call_soon_threadsafe(lambda: asyncio.ensure_future(_call()))
-            if not event.wait(timeout=10):
-                raise TimeoutError("获取天气信息超时")
-            if exception_holder:
-                raise exception_holder[0]
-            result = result_holder[0]
-            if isinstance(result, ActionResponse):
-                weather_report = result.result
-                self.cache_manager.set(self.CacheType.WEATHER, location, weather_report)
-                return weather_report
-            return "天气信息获取失败"
-
-        except Exception as e:
-            self.logger.bind(tag=TAG).error(f"获取天气信息失败: {e}")
-            return "天气信息获取失败"
+        天气改为用户提问且已知城市后按需调用 get_weather，既避免启动阶段一次
+        无谓的外部请求，也避免把缓存里的旧天气当作实时数据注入提示词。
+        """
+        return ""
 
     def update_context_info(self, conn, client_ip: str):
-        """同步更新上下文信息"""
+        """同步更新上下文信息
+
+        client_ip 仅保留参数兼容，不再用于 IP 定位，也不再预取天气。
+        """
         try:
-            local_address = ""
-            if (
-                client_ip
-                and self.base_prompt_template
-                and (
-                    "local_address" in self.base_prompt_template
-                    or "weather_info" in self.base_prompt_template
-                )
-            ):
-                # 获取位置信息（使用全局缓存）
-                local_address = self._get_location_info(client_ip)
-
-            if (
-                self.base_prompt_template
-                and "weather_info" in self.base_prompt_template
-                and local_address
-            ):
-                # 获取天气信息（使用全局缓存）
-                self._get_weather_info(conn, local_address)
-
             # 获取配置的上下文数据
             if hasattr(conn, "device_id") and conn.device_id:
                 if (
@@ -271,22 +202,10 @@ class PromptManager:
             # 获取最新的时间信息（不缓存）
             today_date, today_weekday, lunar_date = self._get_current_time_info()
 
-            # 获取缓存的上下文信息
-            local_address = ""
+            # 所在地与天气不再预注入：未知时由模型追问，用户说出城市后调 get_weather
+            # 变量保留以兼容自定义模板
+            local_address = "未知"
             weather_info = ""
-
-            if client_ip:
-                # 获取位置信息（从全局缓存）
-                local_address = (
-                    self.cache_manager.get(self.CacheType.LOCATION, client_ip) or ""
-                )
-
-                # 获取天气信息（从全局缓存）
-                if local_address:
-                    weather_info = (
-                        self.cache_manager.get(self.CacheType.WEATHER, local_address)
-                        or ""
-                    )
 
             # 获取TTS选择的语言，默认值为中文
             language = (

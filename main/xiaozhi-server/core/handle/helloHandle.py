@@ -53,16 +53,28 @@ async def handleHelloMessage(conn: "ConnectionHandler", msg_json):
         conn.logger.bind(tag=TAG).debug(f"客户端音频格式: {format}")
         conn.audio_format = format
         conn.welcome_msg["audio_params"] = audio_params
+
+    # 客户端上报的设备 SN（咪咕音乐鉴权用，原样透传）
+    sn = msg_json.get("sn")
+    if sn:
+        conn.sn = str(sn).strip()
+        conn.logger.bind(tag=TAG).debug(f"客户端上报 SN: {conn.sn}")
+
     features = msg_json.get("features")
     if features:
         conn.logger.bind(tag=TAG).debug(f"客户端特性: {features}")
         conn.features = features
+        # 客户端是否支持咪咕音乐（决定 play_music 是否走鉴权分支）
+        conn.migu_enabled = bool(features.get("migu"))
         if features.get("mcp"):
             conn.logger.bind(tag=TAG).debug("客户端支持MCP")
             conn.mcp_client = MCPClient()
         if features.get("aec"):
             conn.logger.bind(tag=TAG).debug("客户端启用了服务端AEC")
             conn.client_aec = True
+
+    # 声明服务端支持的消息能力（设备可据此判断是否可用）
+    conn.welcome_msg["features"] = {"music_play": True}
 
     await conn.websocket.send(json.dumps(conn.welcome_msg))
 

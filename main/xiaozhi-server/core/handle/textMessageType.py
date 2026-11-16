@@ -10,3 +10,5 @@ class TextMessageType(Enum):
     MCP = "mcp"
     SERVER = "server"
     PING = "ping"
+    TEXT_TTS = "text_tts"
+    AUDIO_PLAY = "audio_play"

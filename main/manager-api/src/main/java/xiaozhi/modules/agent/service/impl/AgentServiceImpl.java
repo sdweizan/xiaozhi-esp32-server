@@ -61,12 +61,21 @@ import xiaozhi.modules.model.service.ModelProviderService;
 import xiaozhi.modules.security.user.SecurityUser;
 import xiaozhi.modules.sys.enums.SuperAdminEnum;
 import xiaozhi.modules.timbre.service.TimbreService;
+import xiaozhi.modules.timbre.entity.TimbreEntity;
+import xiaozhi.modules.agent.entity.AgentTagEntity;
+import xiaozhi.modules.agent.entity.AgentTagRelationEntity;
+import xiaozhi.modules.timbre.dao.TimbreDao;
+import xiaozhi.modules.model.dao.ModelConfigDao;
+import xiaozhi.modules.agent.dao.AgentTagRelationDao;
 
 @Service
 @AllArgsConstructor
 public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> implements AgentService {
     private final AgentDao agentDao;
     private final AgentTagDao agentTagDao;
+    private final TimbreDao timbreDao;
+    private final ModelConfigDao modelConfigDao;
+    private final AgentTagRelationDao agentTagRelationDao;
     private final TimbreService timbreModelService;
     private final ModelConfigService modelConfigService;
     private final RedisUtils redisUtils;
@@ -256,41 +265,56 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         }
 
         List<AgentEntity> agentEntities = baseDao.selectList(queryWrapper);
-        return agentEntities.stream().map(this::buildAgentDTO).collect(Collectors.toList());
+        List<ModelConfigEntity> modelConfigEntities = modelConfigDao.selectList(new QueryWrapper<>());
+        List<TimbreEntity> timbreEntities = timbreDao.selectList(new QueryWrapper<>());
+        List<AgentTagEntity> agentTagEntities = agentTagDao.selectList(new QueryWrapper<>());
+        List<AgentTagRelationEntity> agentTagRelationEntities = agentTagRelationDao.selectList(new QueryWrapper<>());
+        return agentEntities.stream().map(item -> this.buildAgentDTO(item, modelConfigEntities, timbreEntities, agentTagEntities, agentTagRelationEntities)).collect(Collectors.toList());
     }
 
     /**
      * 将AgentEntity转换为AgentDTO
      */
-    private AgentDTO buildAgentDTO(AgentEntity agent) {
+    private AgentDTO buildAgentDTO(AgentEntity agent,
+        List<ModelConfigEntity> modelConfigEntities,
+        List<TimbreEntity> timbreEntities,
+        List<AgentTagEntity> agentTagEntities,
+        List<AgentTagRelationEntity> agentTagRelationEntities
+    ) {
         AgentDTO dto = new AgentDTO();
         dto.setId(agent.getId());
         dto.setAgentName(agent.getAgentName());
         dto.setSystemPrompt(agent.getSystemPrompt());
 
         // 获取 TTS 模型名称
-        dto.setTtsModelName(modelConfigService.getModelNameById(agent.getTtsModelId()));
+        // dto.setTtsModelName(modelConfigService.getModelNameById(agent.getTtsModelId()));
+        dto.setTtsModelName(modelConfigEntities.stream().filter(item -> item.getId().equals(agent.getTtsModelId())).findAny().orElse(new ModelConfigEntity()).getModelName());
 
         // 获取 LLM 模型名称
-        dto.setLlmModelName(modelConfigService.getModelNameById(agent.getLlmModelId()));
+        // dto.setLlmModelName(modelConfigService.getModelNameById(agent.getLlmModelId()));
+        dto.setLlmModelName(modelConfigEntities.stream().filter(item -> item.getId().equals(agent.getLlmModelId())).findAny().orElse(new ModelConfigEntity()).getModelName());
 
         // 获取 VLLM 模型名称
-        dto.setVllmModelName(modelConfigService.getModelNameById(agent.getVllmModelId()));
+        // dto.setVllmModelName(modelConfigService.getModelNameById(agent.getVllmModelId()));
+        dto.setVllmModelName(modelConfigEntities.stream().filter(item -> item.getId().equals(agent.getVllmModelId())).findAny().orElse(new ModelConfigEntity()).getModelName());
 
         // 获取记忆模型名称
         dto.setMemModelId(agent.getMemModelId());
 
         // 获取 TTS 音色名称
-        dto.setTtsVoiceName(timbreModelService.getTimbreNameById(agent.getTtsVoiceId()));
+        // dto.setTtsVoiceName(timbreModelService.getTimbreNameById(agent.getTtsVoiceId()));
+        dto.setTtsVoiceName(timbreEntities.stream().filter(item -> item.getId().equals(agent.getTtsVoiceId())).findAny().orElse(new TimbreEntity()).getName());
 
         // 获取智能体最近的最后连接时长
-        dto.setLastConnectedAt(deviceService.getLatestLastConnectionTime(agent.getId()));
+        // dto.setLastConnectedAt(deviceService.getLatestLastConnectionTime(agent.getId()));
 
         // 获取设备数量
-        dto.setDeviceCount(getDeviceCountByAgentId(agent.getId()));
+        // dto.setDeviceCount(getDeviceCountByAgentId(agent.getId()));
 
         // 获取标签列表
-        List<AgentTagEntity> tags = agentTagDao.selectByAgentId(agent.getId());
+        // List<AgentTagEntity> tags = agentTagDao.selectByAgentId(agent.getId());
+        List<String> agentTags = agentTagRelationEntities.stream().filter(item -> item.getAgentId().equals(agent.getId())).map(item -> item.getTagId()).toList();
+        List<AgentTagEntity> tags = agentTagEntities.stream().filter(item -> agentTags.contains(item.getId())).toList();
         if (CollUtil.isNotEmpty(tags)) {
             dto.setTags(tags.stream().map(this::convertTagToDTO).collect(Collectors.toList()));
         }
@@ -597,6 +621,7 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         AgentTemplateEntity template = agentTemplateService.getDefaultTemplate();
         if (template != null) {
             // 设置模板中的默认值
+            entity.setAgentName(template.getAgentName());
             entity.setAsrModelId(template.getAsrModelId());
             entity.setVadModelId(template.getVadModelId());
             entity.setLlmModelId(template.getLlmModelId());
@@ -637,7 +662,7 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
                     entity.setChatHistoryConf(0);
                 } else {
                     // 有记忆功能的模型，默认记录文本和语音
-                    entity.setChatHistoryConf(2);
+                    entity.setChatHistoryConf(1);
                 }
             } else {
                 entity.setChatHistoryConf(template.getChatHistoryConf());
@@ -666,8 +691,7 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         // 设置默认插件
         List<AgentPluginMapping> toInsert = new ArrayList<>();
         // 播放音乐、查天气、查新闻
-        String[] pluginIds = new String[] { "SYSTEM_PLUGIN_MUSIC", "SYSTEM_PLUGIN_WEATHER",
-                "SYSTEM_PLUGIN_NEWS_NEWSNOW" };
+        String[] pluginIds = new String[] { "SYSTEM_PLUGIN_MUSIC", "SYSTEM_PLUGIN_STORY", "SYSTEM_PLUGIN_WEATHER", "SYSTEM_PLUGIN_NEWS_NEWSNOW" };
         for (String pluginId : pluginIds) {
             ModelProviderDTO provider = modelProviderService.getById(pluginId);
             if (provider == null) {
