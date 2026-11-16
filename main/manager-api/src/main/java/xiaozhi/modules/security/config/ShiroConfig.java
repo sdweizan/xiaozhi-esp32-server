@@ -43,7 +43,7 @@ public class ShiroConfig {
     }
 
     @Bean("securityManager")
-    public WebSecurityManager securityManager(Collection<Realm> realms, SessionManager sessionManager) {
+    public SecurityManager securityManager(Collection<Realm> realms, SessionManager sessionManager) {
         DefaultWebSecurityManager securityManager = new DefaultWebSecurityManager();
         securityManager.setRealms(realms);
         securityManager.setSessionManager(sessionManager);

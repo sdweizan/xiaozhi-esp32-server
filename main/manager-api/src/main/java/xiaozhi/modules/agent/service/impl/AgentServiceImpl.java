@@ -62,6 +62,7 @@ import xiaozhi.modules.security.user.SecurityUser;
 import xiaozhi.modules.sys.enums.SuperAdminEnum;
 import xiaozhi.modules.timbre.service.TimbreService;
 import xiaozhi.modules.timbre.entity.TimbreEntity;
+import xiaozhi.modules.agent.entity.AgentTagEntity;
 import xiaozhi.modules.agent.entity.AgentTagRelationEntity;
 import xiaozhi.modules.timbre.dao.TimbreDao;
 import xiaozhi.modules.model.dao.ModelConfigDao;

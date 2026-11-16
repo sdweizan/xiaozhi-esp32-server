@@ -1,4 +1,0 @@
-# 该文件在上游 sdweizan/xiaozhi-esp32-server 中以混合行尾（CRLF+LF）存储。
-# 禁用行尾转换，使仓库内 blob 与上游保持一致，避免每次合并产生整文件的伪 diff。
-# 注意：仅此文件，勿扩大到 *.java —— 其它 Java 文件上游为纯 LF。
-main/manager-api/src/main/java/xiaozhi/modules/agent/service/impl/AgentServiceImpl.java -text

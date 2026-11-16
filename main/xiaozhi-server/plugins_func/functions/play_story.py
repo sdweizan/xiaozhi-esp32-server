@@ -41,12 +41,33 @@ play_story_function_desc = {
 
 
 @register_function("play_story", play_story_function_desc, ToolType.SYSTEM_CTL)
-async def play_story(conn: "ConnectionHandler", story_name: str):
+def play_story(conn: "ConnectionHandler", story_name: str):
     try:
         story_intent = (
             f"播放故事 {story_name}" if story_name != "random" else "随机播放故事"
         )
-        await handle_story_command(conn, story_intent)
+
+        # 检查事件循环状态
+        if not conn.loop.is_running():
+            conn.logger.bind(tag=TAG).error("事件循环未运行，无法提交任务")
+            return ActionResponse(
+                action=Action.RESPONSE, result="系统繁忙", response="请稍后再试"
+            )
+
+        # 提交异步任务
+        task = conn.loop.create_task(
+            handle_story_command(conn, story_intent)  # 封装异步逻辑
+        )
+
+        # 非阻塞回调处理
+        def handle_done(f):
+            try:
+                f.result()  # 可在此处理成功逻辑
+                conn.logger.bind(tag=TAG).info("播放完成")
+            except Exception as e:
+                conn.logger.bind(tag=TAG).error(f"播放失败: {e}")
+
+        task.add_done_callback(handle_done)
 
         return ActionResponse(
             action=Action.NONE, result="指令已接收", response="正在为您播放故事"
