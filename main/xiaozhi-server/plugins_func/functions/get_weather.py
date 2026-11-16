@@ -3,7 +3,6 @@ import httpx
 from bs4 import BeautifulSoup
 from config.logger import setup_logging
 from plugins_func.register import register_function, ToolType, ActionResponse, Action
-from core.utils.util import get_ip_info
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -17,16 +16,18 @@ GET_WEATHER_FUNCTION_DESC = {
     "function": {
         "name": "get_weather",
         "description": (
-            "获取某个地点的天气，用户应提供一个位置，比如用户说杭州天气，参数为：杭州。"
+            "查询某个城市的天气，包含当前天气与未来7天预报。"
+            "用户明确说出城市时必须调用本工具，location 传该城市名，例如用户说杭州天气，参数为：杭州。"
             "如果用户说的是省份，默认用省会城市。如果用户说的不是省份或城市而是一个地名，默认用该地所在省份的省会城市。"
-            "重要：本地未来7天天气已在上下文中提供，用户未指明其他城市时绝对不要调用此工具。"
+            "如果用户没有说城市、前文也没有提到过城市，不要猜测城市，先询问用户所在城市，等用户回答后再调用。"
+            "严禁使用 IP 定位、基站位置或默认城市，严禁编造天气数据。"
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "location": {
                     "type": "string",
-                    "description": "地点名，例如杭州。可选参数，如果不提供则不传",
+                    "description": "用户明确说出的城市名，例如杭州。用户没有说明城市时不要传，先询问用户所在城市。",
                 },
                 "lang": {
                     "type": "string",
@@ -253,32 +254,20 @@ async def get_weather(conn: "ConnectionHandler", location: str = None, lang: str
     from core.utils.cache.manager import cache_manager, CacheType
 
     weather_config = conn.config.get("plugins", {}).get("get_weather", {})
-    api_host = weather_config.get("api_host", "mj7p3y7naa.re.qweatherapi.com")
-    api_key = weather_config.get("api_key", "a861d0d5e7bf4ee1a83d9a9e4f96d4da")
-    default_location = weather_config.get("default_location", "广州")
-    client_ip = conn.client_ip
+    api_host = weather_config.get("api_host", "pp7jpjugqp.re.qweatherapi.com")
+    api_key = weather_config.get("api_key", "4907747499e24f678a9ba3feac04e5b5")
 
-    # 优先使用用户提供的location参数
-    if not location:
-        # 通过客户端IP解析城市
-        if client_ip:
-            # 先从缓存获取IP对应的城市信息
-            cached_ip_info = cache_manager.get(CacheType.IP_INFO, client_ip)
-            if cached_ip_info:
-                location = cached_ip_info.get("city")
-            else:
-                # 缓存未命中，调用API获取
-                # get_ip_info 是同步 requests 调用，放线程池，避免卡住主事件循环
-                ip_info = await asyncio.to_thread(get_ip_info, client_ip, logger)
-                if ip_info:
-                    cache_manager.set(CacheType.IP_INFO, client_ip, ip_info)
-                    location = ip_info.get("city")
+    # 城市只认用户明确说出的，不再按 IP 定位，也不再用默认城市兜底
+    location = (location or "").strip()
+    if location in ("", "当前位置", "本地", "未知位置", "未知", "auto", "自动"):
+        return ActionResponse(
+            Action.REQLLM,
+            "我还不知道用户在哪个城市。这一轮请先用一句话询问用户所在城市"
+            "（例如“你在哪个城市呀？”），不要调用其他工具，不要给出任何温度或天气现象，"
+            "也不要猜测城市。等用户回答城市后，下一轮再调用 get_weather 并传入该城市。",
+            None,
+        )
 
-            if not location:
-                location = default_location
-        else:
-            # 若无IP，使用默认位置
-            location = default_location
     # 尝试从缓存获取完整天气报告
     weather_cache_key = f"full_weather_{location}_{lang}"
     cached_weather_report = cache_manager.get(CacheType.WEATHER, weather_cache_key)
