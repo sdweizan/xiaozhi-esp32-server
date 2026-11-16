@@ -50,7 +50,6 @@ play_music_function_desc = {
 async def play_music(conn: "ConnectionHandler", song_name: str, singer: str = None):
     try:
         await handle_music_command(conn, song_name, singer)
-
         return ActionResponse(
             action=Action.RECORD, result="指令已接收", response="正在为您播放音乐"
         )
