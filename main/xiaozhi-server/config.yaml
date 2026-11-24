@@ -16,7 +16,7 @@ server:
   # 如果按默认的写法，ota接口会自动生成websocket地址，并输出在启动日志里，这个地址你可以直接用浏览器访问ota接口确认一下
   # 当你使用docker部署或使用公网部署(使用ssl、域名)时，不一定准确
   # 所以如果你使用docker部署时，将websocket设置成局域网地址
-  # 如果你使用公网部署时，将vwebsocket设置成公网地址
+  # 如果你使用公网部署时，将websocket设置成公网地址
   websocket: ws://你的ip或者域名:端口号/xiaozhi/v1/
   # 视觉分析接口地址
   # 向设备发送的视觉分析的接口地址
@@ -119,6 +119,10 @@ wakeup_words:
 # MCP接入点地址，地址格式为：ws://你的mcp接入点ip或者域名:端口号/mcp/?token=你的token
 # 详细教程 https://github.com/xinnan-tech/xiaozhi-esp32-server/blob/main/docs/mcp-endpoint-integration.md
 mcp_endpoint: 你的接入点 websocket地址
+# 声纹识别到说话人后，是否把身份附在 MCP 接入点 tools/call 的 params._meta 上。
+# true：写入 speakerId、speakerName。未识别到说话人时不附带，请求与原来一致。
+# 工具参数本身不改。false：完全不附带。
+mcp_forward_speaker: true
 
 # 上下文源配置
 # 用于在系统提示词中注入动态数据，如健康数据、股票信息等
@@ -626,6 +630,10 @@ LLM:
     max_tokens: 500   # 最大生成token数
     top_p: 1
     frequency_penalty: 0  # 频率惩罚
+    # 可选: chat_template_kwargs 仅供 vLLM/SGLang 等自托管 OpenAI 兼容后端使用(请求级控制 chat template, 例如思考开关)
+    # 注意: DashScope 等云服务不支持此字段, 请勿在 AliLLM 等云服务配置段启用; 此处示例仅作参数格式参考
+    # chat_template_kwargs:
+    #   enable_thinking: true
   AliAppLLM:
     # 定义LLM API类型
     type: AliBL
@@ -668,6 +676,7 @@ LLM:
     type: ollama
     model_name: qwen2.5 #  使用的模型名称，需要预先使用ollama pull下载
     base_url: http://localhost:11434  # Ollama服务地址
+    api_key: ollama # 本地部署无需真实密钥，占位即可；走鉴权网关或Ollama Cloud时修改为真实key
   DifyLLM:
     # 定义LLM API类型
     type: dify
