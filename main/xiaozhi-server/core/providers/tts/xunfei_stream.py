@@ -119,11 +119,6 @@ class TTSProvider(TTSProviderBase):
         self._monitor_task = None
         self.activate_session = False
 
-        # 首句攒帧（调试中）：讯飞流式分小块吐音频，公网下块间间隙大
-        self._start_buffer_frames = 6
-        self._start_audio_buffer = []
-        self._start_buffering = True
-
         # 序列号管理
         self.text_seq = 0
 
@@ -132,7 +127,9 @@ class TTSProvider(TTSProviderBase):
             raise ValueError("讯飞TTS需要配置app_id、api_key和api_secret")
 
     async def _ensure_connection(self):
-        """确保WebSocket连接可用"""
+        """确保WebSocket连接可用（复用已有连接，避免每句重新握手导致首包慢）"""
+        if self.ws is not None:
+            return self.ws
         try:
             logger.bind(tag=TAG).debug("开始建立新连接...")
 
@@ -285,12 +282,11 @@ class TTSProvider(TTSProviderBase):
             # 设置会话激活标志
             self.activate_session = True
 
-            # 重置首句攒帧状态（每句话重新攒）
-            self._start_buffering = True
-            self._start_audio_buffer = []
-            logger.bind(tag=TAG).info("[攒帧] start_session 重置攒帧状态")
+            # 重置编码器状态，清掉上一句残留的部分帧（火山式）
+            if hasattr(self, "opus_encoder") and self.opus_encoder:
+                self.opus_encoder.reset_state()
 
-            # 建立新连接
+            # 建立连接（已有连接则复用）
             await self._ensure_connection()
 
             # 启动监听任务
@@ -318,13 +314,7 @@ class TTSProvider(TTSProviderBase):
                 await self.ws.send(json.dumps(stop_request))
                 logger.bind(tag=TAG).debug("会话结束请求已发送")
 
-                if self._monitor_task:
-                    try:
-                        await self._monitor_task
-                    except Exception as e:
-                        logger.bind(tag=TAG).error(f"等待监听任务完成时发生错误: {str(e)}")
-                    finally:
-                        self._monitor_task = None
+                # 复用连接：不等待监听任务退出
         except Exception as e:
             logger.bind(tag=TAG).error(f"关闭会话失败: {str(e)}")
             await self.close()
@@ -351,28 +341,6 @@ class TTSProvider(TTSProviderBase):
                 pass
             self.ws = None
 
-    def _flush_start_audio_buffer(self):
-        """把攒够的首句音频帧一次性入队"""
-        if self._start_buffering:
-            n = len(self._start_audio_buffer)
-            self._start_buffering = False
-            for frame in self._start_audio_buffer:
-                self.handle_opus(frame)
-            self._start_audio_buffer = []
-            logger.bind(tag=TAG).info(f"[攒帧] flush 释放 {n} 帧入队")
-
-    def _buffered_handle_opus(self, opus_data: bytes):
-        """首句攒帧：先攒够 N 帧再一次性放行，之后逐帧直发"""
-        if self._start_buffering:
-            self._start_audio_buffer.append(opus_data)
-            if len(self._start_audio_buffer) == 1:
-                logger.bind(tag=TAG).info("[攒帧] 收到第一帧，开始攒帧")
-            if len(self._start_audio_buffer) >= self._start_buffer_frames:
-                logger.bind(tag=TAG).info(f"[攒帧] 攒满 {len(self._start_audio_buffer)} 帧，触发 flush")
-                self._flush_start_audio_buffer()
-        else:
-            self.handle_opus(opus_data)
-
     async def _start_monitor_tts_response(self):
         """监听TTS响应"""
         try:
@@ -398,16 +366,20 @@ class TTSProvider(TTSProviderBase):
                                 status = audio_payload.get("status", 0)
                                 audio_data = audio_payload.get("audio", "")
                                 if status == 0:
-                                    logger.bind(tag=TAG).info("[攒帧] 收到 status=0 合成启动")
+                                    logger.bind(tag=TAG).debug("TTS合成已启动")
                                     self.tts_audio_queue.put(
                                         (SentenceType.FIRST, [], None)
                                     )
                                 elif status == 2:
-                                    logger.bind(tag=TAG).info(f"[攒帧] 收到 status=2 合成完成，当前攒 {len(self._start_audio_buffer)} 帧")
-                                    self._flush_start_audio_buffer()
+                                    logger.bind(tag=TAG).debug("收到结束状态的音频数据，TTS合成完成")
+                                    # 句尾冲刷编码器残留（火山式）
+                                    self.opus_encoder.encode_pcm_to_opus_stream(
+                                        b"", True, self.handle_opus
+                                    )
                                     self.activate_session = False
                                     self._process_before_stop_play_files()
-                                    break
+                                    # 复用连接：继续等下一句，不退出
+                                    continue
                                 else:
                                     tts_text = self.get_tts_text(self.conn.sentence_id)
                                     if tts_text:
@@ -421,7 +393,7 @@ class TTSProvider(TTSProviderBase):
                                     try:
                                         audio_bytes = base64.b64decode(audio_data)
                                         self.opus_encoder.encode_pcm_to_opus_stream(
-                                            audio_bytes, False, self._buffered_handle_opus
+                                            audio_bytes, False, self.handle_opus
                                         )
 
                                     except Exception as e:
@@ -445,7 +417,7 @@ class TTSProvider(TTSProviderBase):
                     )
                     break
 
-            # 链接不可复用
+            # 出错退出时才关闭连接（正常复用不走到这里）
             if self.ws:
                 try:
                     await self.ws.close()
