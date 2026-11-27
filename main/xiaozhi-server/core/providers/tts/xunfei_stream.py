@@ -119,6 +119,13 @@ class TTSProvider(TTSProviderBase):
         self._monitor_task = None
         self.activate_session = False
 
+        # 首句攒帧：讯飞流式分小块吐音频，公网下块间间隙大，
+        # 先攒够 N 帧再一次性放行，让终端开头有足够缓冲，避免前几个字卡顿
+        # 帧数越大越抗卡、首音延迟越高（N×60ms），可按需调整
+        self._start_buffer_frames = 6
+        self._start_audio_buffer = []
+        self._start_buffering = True
+
         # 序列号管理
         self.text_seq = 0
 
@@ -280,6 +287,10 @@ class TTSProvider(TTSProviderBase):
             # 设置会话激活标志
             self.activate_session = True
 
+            # 重置首句攒帧状态（每句话重新攒）
+            self._start_buffering = True
+            self._start_audio_buffer = []
+
             # 建立新连接
             await self._ensure_connection()
 
@@ -341,6 +352,23 @@ class TTSProvider(TTSProviderBase):
                 pass
             self.ws = None
 
+    def _flush_start_audio_buffer(self):
+        """把攒够的首句音频帧一次性入队"""
+        if self._start_buffering:
+            self._start_buffering = False
+            for frame in self._start_audio_buffer:
+                self.handle_opus(frame)
+            self._start_audio_buffer = []
+
+    def _buffered_handle_opus(self, opus_data: bytes):
+        """首句攒帧：先攒够 N 帧再一次性放行，之后逐帧直发"""
+        if self._start_buffering:
+            self._start_audio_buffer.append(opus_data)
+            if len(self._start_audio_buffer) >= self._start_buffer_frames:
+                self._flush_start_audio_buffer()
+        else:
+            self.handle_opus(opus_data)
+
     async def _start_monitor_tts_response(self):
         """监听TTS响应"""
         try:
@@ -372,6 +400,8 @@ class TTSProvider(TTSProviderBase):
                                     )
                                 elif status == 2:
                                     logger.bind(tag=TAG).debug("收到结束状态的音频数据，TTS合成完成")
+                                    # 冲刷未攒满的帧，避免过短引导语被卡住不播
+                                    self._flush_start_audio_buffer()
                                     self.activate_session = False
                                     self._process_before_stop_play_files()
                                     break
@@ -388,7 +418,7 @@ class TTSProvider(TTSProviderBase):
                                     try:
                                         audio_bytes = base64.b64decode(audio_data)
                                         self.opus_encoder.encode_pcm_to_opus_stream(
-                                            audio_bytes, False, self.handle_opus
+                                            audio_bytes, False, self._buffered_handle_opus
                                         )
 
                                     except Exception as e:
