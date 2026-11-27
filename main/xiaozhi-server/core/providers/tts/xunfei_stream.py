@@ -119,9 +119,7 @@ class TTSProvider(TTSProviderBase):
         self._monitor_task = None
         self.activate_session = False
 
-        # 首句攒帧：讯飞流式分小块吐音频，公网下块间间隙大，
-        # 先攒够 N 帧再一次性放行，让终端开头有足够缓冲，避免前几个字卡顿
-        # 帧数越大越抗卡、首音延迟越高（N×60ms），可按需调整
+        # 首句攒帧（调试中）：讯飞流式分小块吐音频，公网下块间间隙大
         self._start_buffer_frames = 6
         self._start_audio_buffer = []
         self._start_buffering = True
@@ -290,6 +288,7 @@ class TTSProvider(TTSProviderBase):
             # 重置首句攒帧状态（每句话重新攒）
             self._start_buffering = True
             self._start_audio_buffer = []
+            logger.bind(tag=TAG).info("[攒帧] start_session 重置攒帧状态")
 
             # 建立新连接
             await self._ensure_connection()
@@ -355,16 +354,21 @@ class TTSProvider(TTSProviderBase):
     def _flush_start_audio_buffer(self):
         """把攒够的首句音频帧一次性入队"""
         if self._start_buffering:
+            n = len(self._start_audio_buffer)
             self._start_buffering = False
             for frame in self._start_audio_buffer:
                 self.handle_opus(frame)
             self._start_audio_buffer = []
+            logger.bind(tag=TAG).info(f"[攒帧] flush 释放 {n} 帧入队")
 
     def _buffered_handle_opus(self, opus_data: bytes):
         """首句攒帧：先攒够 N 帧再一次性放行，之后逐帧直发"""
         if self._start_buffering:
             self._start_audio_buffer.append(opus_data)
+            if len(self._start_audio_buffer) == 1:
+                logger.bind(tag=TAG).info("[攒帧] 收到第一帧，开始攒帧")
             if len(self._start_audio_buffer) >= self._start_buffer_frames:
+                logger.bind(tag=TAG).info(f"[攒帧] 攒满 {len(self._start_audio_buffer)} 帧，触发 flush")
                 self._flush_start_audio_buffer()
         else:
             self.handle_opus(opus_data)
@@ -394,13 +398,12 @@ class TTSProvider(TTSProviderBase):
                                 status = audio_payload.get("status", 0)
                                 audio_data = audio_payload.get("audio", "")
                                 if status == 0:
-                                    logger.bind(tag=TAG).debug("TTS合成已启动")
+                                    logger.bind(tag=TAG).info("[攒帧] 收到 status=0 合成启动")
                                     self.tts_audio_queue.put(
                                         (SentenceType.FIRST, [], None)
                                     )
                                 elif status == 2:
-                                    logger.bind(tag=TAG).debug("收到结束状态的音频数据，TTS合成完成")
-                                    # 冲刷未攒满的帧，避免过短引导语被卡住不播
+                                    logger.bind(tag=TAG).info(f"[攒帧] 收到 status=2 合成完成，当前攒 {len(self._start_audio_buffer)} 帧")
                                     self._flush_start_audio_buffer()
                                     self.activate_session = False
                                     self._process_before_stop_play_files()
