@@ -280,11 +280,6 @@ class TTSProvider(TTSProviderBase):
             # 设置会话激活标志
             self.activate_session = True
 
-            # 重置编码器状态：清掉上一句残留的部分帧（最多 60ms），
-            # 避免残留音频混入本句引导语开头，造成前两个字卡顿/杂音
-            if hasattr(self, "opus_encoder") and self.opus_encoder:
-                self.opus_encoder.reset_state()
-
             # 建立新连接
             await self._ensure_connection()
 
