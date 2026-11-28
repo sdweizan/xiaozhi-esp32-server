@@ -13,7 +13,7 @@ from core.utils.audioRateController import AudioRateController
 
 TAG = __name__
 AUDIO_FRAME_DURATION = 60  # 音频帧时长（毫秒），与 Opus 编码 60ms/帧对齐
-PRE_BUFFER_COUNT = 2  # 首段发送时不入队的帧数，避免流控延迟拉高首帧到达时间
+PRE_BUFFER_COUNT = 15  # 首段预缓冲帧数（约900ms）：开头一次性推给终端，填满其解码缓冲抗公网抖动
 
 
 async def sendAudioMessage(conn: "ConnectionHandler", sentenceType, audios, text, sentence_id=None):
