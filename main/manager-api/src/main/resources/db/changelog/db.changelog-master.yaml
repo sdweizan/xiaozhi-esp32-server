@@ -754,6 +754,20 @@ databaseChangeLog:
             encoding: utf8
             path: classpath:db/changelog/202609172100.sql
   - changeSet:
+      id: 202610261030
+      author: RanChen
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202610261030.sql
+  - changeSet:
+      id: 202610291451
+      author: RanChen
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202610291451.sql
+  - changeSet:
       id: 202610302051
       author: shinjiyu
       changes:
@@ -767,3 +781,17 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202611021200.sql
+  - changeSet:
+      id: 202611101200
+      author: Specstreamai
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611101200.sql
+  - changeSet:
+      id: 202611181622
+      author: RanChen
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611181622.sql
