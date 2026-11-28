@@ -16,7 +16,7 @@ server:
   # 如果按默认的写法，ota接口会自动生成websocket地址，并输出在启动日志里，这个地址你可以直接用浏览器访问ota接口确认一下
   # 当你使用docker部署或使用公网部署(使用ssl、域名)时，不一定准确
   # 所以如果你使用docker部署时，将websocket设置成局域网地址
-  # 如果你使用公网部署时，将vwebsocket设置成公网地址
+  # 如果你使用公网部署时，将websocket设置成公网地址
   websocket: ws://你的ip或者域名:端口号/xiaozhi/v1/
   # 视觉分析接口地址
   # 向设备发送的视觉分析的接口地址
@@ -119,6 +119,10 @@ wakeup_words:
 # MCP接入点地址，地址格式为：ws://你的mcp接入点ip或者域名:端口号/mcp/?token=你的token
 # 详细教程 https://github.com/xinnan-tech/xiaozhi-esp32-server/blob/main/docs/mcp-endpoint-integration.md
 mcp_endpoint: 你的接入点 websocket地址
+# 声纹识别到说话人后，是否把身份附在 MCP 接入点 tools/call 的 params._meta 上。
+# true：写入 speakerId、speakerName。未识别到说话人时不附带，请求与原来一致。
+# 工具参数本身不改。false：完全不附带。
+mcp_forward_speaker: true
 
 # 上下文源配置
 # 用于在系统提示词中注入动态数据，如健康数据、股票信息等
@@ -200,19 +204,20 @@ plugins:
     # ragflow知识库id
     dataset_ids: ["123456789"]
   # 联网搜索插件配置
-  # 支持秘塔(metaso)、Tavily、Serply和Outcrawl四个搜索源
+  # 支持秘塔(metaso)、Tavily、Serply、Outcrawl和SpecStream五个搜索源
   # 秘塔API Key申请：https://metaso.cn/search-api/api-keys
   # Tavily API Key申请：https://app.tavily.com/home
   # Serply API Key申请：https://serply.io
   # Outcrawl API Key申请：https://outcrawl.ai
+  # SpecStream API Key申请：https://specstream.ai/signup?src=xiaozhi-esp32-server
   web_search:
-    # 搜索源：metaso / tavily / serply / outcrawl
+    # 搜索源：metaso / tavily / serply / outcrawl / specstream
     provider: "metaso"
     # 工具描述，用于告知LLM何时调用此工具，可根据需要自定义
     description: "联网搜索工具。当用户明确需要联网搜索问题时使用此工具。"
     # 返回结果数量（默认5）
     max_results: 5
-    # 秘塔API Key（mk-前缀） / Tavily API Key（tvly-前缀） / Serply API Key / Outcrawl API Key
+    # 秘塔API Key（mk-前缀） / Tavily API Key（tvly-前缀） / Serply API Key / Outcrawl API Key / SpecStream API Key
     api_key: "mk-xxx"
 # 声纹识别配置
 voiceprint:
@@ -653,6 +658,10 @@ LLM:
     max_tokens: 500   # 最大生成token数
     top_p: 1
     frequency_penalty: 0  # 频率惩罚
+    # 可选: chat_template_kwargs 仅供 vLLM/SGLang 等自托管 OpenAI 兼容后端使用(请求级控制 chat template, 例如思考开关)
+    # 注意: DashScope 等云服务不支持此字段, 请勿在 AliLLM 等云服务配置段启用; 此处示例仅作参数格式参考
+    # chat_template_kwargs:
+    #   enable_thinking: true
   AliAppLLM:
     # 定义LLM API类型
     type: AliBL
@@ -695,6 +704,7 @@ LLM:
     type: ollama
     model_name: qwen2.5 #  使用的模型名称，需要预先使用ollama pull下载
     base_url: http://localhost:11434  # Ollama服务地址
+    api_key: ollama # 本地部署无需真实密钥，占位即可；走鉴权网关或Ollama Cloud时修改为真实key
   DifyLLM:
     # 定义LLM API类型
     type: dify
@@ -793,7 +803,11 @@ VLLM:
     # 开通应用地址：https://console.xfyun.cn/app/myapp
     # 有免费额度，但也要开通服务，才能获取api_key
     # 每一个模型都需要单独开通，每一个模型的 api_key 都不同，例如 Lite 模型在 https://console.xfyun.cn/services/cbm 开通
-    base_url: https://ark.cn-beijing.volces.com/api/v3
+    # 讯飞星火的 OpenAI 兼容端点，可用模型名（lite / 4.0Ultra 等）见
+    # https://www.xfyun.cn/doc/spark/HTTP调用文档.html
+    # 注意 base_url 必须指向讯飞自己的域名。这里曾误填成火山方舟的
+    # ark.cn-beijing.volces.com，会把讯飞的 api_key 发给火山引擎。
+    base_url: https://spark-api-open.xf-yun.com/v1
     model_name: lite
     api_key: 你的api_key
 TTS:
